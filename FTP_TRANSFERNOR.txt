@@ -546,3 +546,26 @@ $
 $	WRITE SYS$OUTPUT "ERROR, NO INPUT FILE SPECIFIED ..."
 $	FTPSTAT ==	4
 $	EXIT
+
+set nover
+$ SET ON
+$ SET CONTROL=Y
+$ ON ERROR THEN GOTO CLEANUP
+$! ON CONTROL_Y THEN GOTO CLEANUP
+$!
+$START:
+$ WRITE SYS$OUTPUT "Ctrl Y to RETURN"
+$ WRITE SYS$OUTPUT ""
+$ WRITE SYS$OUTPUT ""
+$ READ /PROMPT="Enter JOB NUMBER..." SYS$COMMAND j1
+$ IF j1 .EQS. "E" THEN GOTO exit
+$ job_no = f$integer(j1)
+$
+$ WRITE SYS$OUTPUT ""
+$ WRITE SYS$OUTPUT job_no
+$ WRITE SYS$OUTPUT "Please wait.."
+$ sched sho job/f 'job_no
+$ wait 00:00:20
+$
+$CLEANUP:
+$ EXIT 1
