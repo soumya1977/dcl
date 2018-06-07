@@ -1,0 +1,548 @@
+$!***************************************************************************** 
+$!                                                                            *
+$! FTP_TRANSFERNOR                                                            * 
+$! ---------------	                                                      *
+$!                                                                            * 
+$! Saumya Ranjan 21/04/2018                                                   *
+$!                                                                            * 
+$! TRANSFERS A FILE FROM THE VAX TO A UNIX MACHINE.                           *
+$!                                                                            *
+$!      MODIFICATION LOG                                                      *
+$!                                                                            *
+$! DATE         INITIALS        CSR     DESCRIPTION                           *
+$! ----         --------        ---     -----------                           *
+$! 					INITIAL RELEASE(AUTO EMAIL OF         *
+$!						SCHEDULES)		      *
+$!									      *			
+$!  PARAMETERS LIST                                                           *
+$!--------------------                                                        *
+$!  P1	:	FILENAME                                                      * 
+$!  P2	:	CONNECT ADDRESS                                               * 
+$!  P3	:	CONNECT USERID                                                * 
+$!  P4	:	CONNECT PASSWORD                                              * 
+$!                                                                            * 
+$!***************************************************************************** 
+$!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+$!!!!!!!!!!!!!!!!! INITIALISATION : !!!!!!!!!!!!!!!!!!!!!!!!!!!!
+$!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+$
+$       SET ON
+$       ON ERROR THEN CONTINUE
+$
+$       INPUTFILE = F$SEARCH(P1)
+$
+$       IF INPUTFILE .EQS. "" 
+$       THEN 
+$               GOTO INPUT_ERROR
+$       ENDIF
+$
+$       ADDRESS  = P2
+$
+$       IF ADDRESS .EQS. "" 
+$       THEN
+$               GOTO INPUT_ERROR
+$       ENDIF
+$
+$       USERID    = F$EDIT(P3,"COLLAPSE,LOWERCASE")
+$
+$       IF USERID .EQS. "" 
+$       THEN
+$               GOTO INPUT_ERROR
+$       ENDIF
+$
+$       PASSWORD  = P4
+$
+$       IF PASSWORD .EQS. "" 
+$       THEN
+$               GOTO INPUT_ERROR
+$       ENDIF
+$
+$
+$       PUNAM           = "PRCTMPSTR:" +                        -
+                           F$PARSE(INPUTFILE,,,"NAME") +        -
+                           F$PARSE(INPUTFILE,,,"TYPE")
+$
+$       PRCNAM          = F$GETJPI("","PRCNAM")
+$       LEN             = F$LOCATE(" ",PRCNAM)
+$       PRC_NAM         = F$EXTRACT(0,LEN,PRCNAM)
+$       FTP_CMDS        = "SYS$LOGIN:"  + "XYZ" + PRC_NAM + ".COM"
+$       FTP_LOG         = "SYS$LOGIN:"  + "XYZ" + PRC_NAM + ".LOG"
+$       TME             = F$CVTIME("","COMPARISON")
+$       MONTH           = F$EXTRACT(5,2,TME) 
+$       DAY             = F$EXTRACT(8,2,TME) 
+$       YEAR            = F$EXTRACT(0,4,TME)
+$       HOUR            = F$EXTRACT(11,2,TME)
+$       MIN             = F$EXTRACT(14,2,TME)
+$       SEC             = F$EXTRACT(17,2,TME)
+$! Include seconds in file name to make name unique
+$	OUTPUTFILE1	= "ESPSNOR_" + YEAR + MONTH + DAY + "_" + HOUR + MIN + SEC
+$!	OUTPUTFILE1	= "ESPSNOR_" + YEAR + MONTH + DAY + "_" + HOUR + MIN
+$       ACKFILE         = "PRCINTDATA:*.EMAILCON_ACK_DDS"
+$
+$       COPY_COUNT      = 0
+$
+$       IF F$SEARCH("''ACKFILE'") .NES. "" 
+$       THEN 
+$               WRITE SYS$OUTPUT "ACKNOWLEDGEMENTS FOUND"
+$               DELETE                          -
+$                       /NOCONFIRM              -
+$                       /NOLOG                  -
+$                        'ACKFILE';*
+$       ENDIF  
+$
+$!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+$!!!!!!!!!!!!!! COPY THE FILE TO THE UNIX MACHINE !!!!!!!!!!!!!
+$!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+$
+$COPY:
+$
+$       COPY_COUNT      =       COPY_COUNT + 1
+$
+$       IF F$SEARCH("''FTP_CMDS'") .NES. "" 
+$       THEN 
+$               DELETE                          -
+                        /NOCONFIRM              -
+                        /NOLOG                  -
+                         'FTP_CMDS';*
+$       ENDIF  
+$
+$       OPEN                                    -
+                /WRITE                          -
+                /ERROR=OPEN_FILE_ERROR          -
+                 FILE                           -
+                'FTP_CMDS
+$
+$       WRITE                                   -
+                /ERROR=WRITE_FILE_ERROR         - 
+                 FILE                           -
+                 "connect ''ADDRESS'"
+$       WRITE                                   -
+                /ERROR=WRITE_FILE_ERROR         - 
+                 FILE                           -
+                 "user ''USERID' ''PASSWORD'"
+$       WRITE                                   -
+                /ERROR=WRITE_FILE_ERROR         - 
+                 FILE                           -
+                 "sunique"
+$       WRITE                                   -
+                /ERROR=WRITE_FILE_ERROR         - 
+                 FILE                           -
+                 "case on"
+$       WRITE                                   -
+                /ERROR=WRITE_FILE_ERROR         - 
+                 FILE                           -
+                 "put ''INPUTFILE' ""''OUTPUTFILE1'"""
+$       WRITE                                   -
+                /ERROR=WRITE_FILE_ERROR         - 
+                 FILE                           -
+                 "close"
+$
+$       CLOSE                                   -
+                /ERROR=CLOSE_FILE_ERROR         -
+                 FILE
+$
+$       FTP                                     -
+                /INPUT='FTP_CMDS
+$
+$!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+$!!!!!!!!!!!!! VERIFY THAT THE FILE HAS TRANSFERED OKAY	!!!!!!
+$!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+$!
+$! THIS IS DONE BY SEARCHING THE FILE FOR A STRING THAT IS 
+$! DEFINITELY NOT THERE. THIS WILL PRODUCE STATISTICS OF THE
+$! NUMBER OF CHARACTERS IN THE FILE. WE THEN READ THE FILE
+$! EXTRACTING THIS INFORMATION, COLLATING THE TOTAL NUMBER
+$! OF BYTES IN THE FILE. WE THEN ESTABLISH THE NUMBER OF BYTES
+$! THAT FTP SAYS IT TRANSFERRED. WE COMPARE THE 2 TO DECIDE IF
+$! THE FILE TRANSFERRED OKAY.
+$! WHEN GATHERING THE INFORMATION THE SYS$OUTPUT IS REDIRECTED
+$! TO A FILE, WHICH IS THEN OPENED, READ AND THE APPROPRIATE
+$! ENTRIES IN THE FILE READ AND THE INFORMATION EXTRACTED.
+$!
+$!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+$
+$!   EXTRACT THE FILE INFOMATION
+$
+$	IF F$SEARCH("PRCTMPSTR:TEST_OPT.DAT") .NES. ""
+$	THEN
+$               DELETE					-
+                        /NOCONFIRM			-
+                        /NOLOG				-
+                         PRCTMPSTR:TEST_OPT.DAT;*
+$	ENDIF
+$
+$	DEFINE						-
+		SYS$OUTPUT				-
+		PRCTMPSTR:TEST_OPT.DAT
+$
+$	SEARCH						-
+		/STATISTICS				-
+		'INPUTFILE'				-
+		DUMMYWORD
+$
+$	DEASSIGN					-
+		 SYS$OUTPUT
+$
+$	OPEN						-
+		/READ					-
+		/ERROR=OPEN_FILE_ERROR			-
+		INFILE					-
+		PRCTMPSTR:TEST_OPT.DAT
+$
+$READLOOP:
+$
+$	READ						-
+		/ERROR=READ_FILE_ERROR			-
+		/END_OF_FILE=CONTINUEON			-
+		INFILE					-
+		INREC
+$
+$	IF (F$LOCATE("Records searched:",INREC)    .EQ. F$LENGTH(INREC)) .AND. -
+           (F$LOCATE("Characters searched:",INREC) .EQ. F$LENGTH(INREC))
+$	THEN
+$		GOTO READLOOP
+$	ELSE
+$		IF F$LOCATE("Characters searched:",INREC) .NE. F$LENGTH(INREC)
+$		THEN
+$			WIDTH = F$INTEGER(F$LOCATE		-
+				("Page",INREC) - F$LOCATE("searched:",INREC)) - 10
+$			SIZE  = F$INTEGER(F$EDIT(F$EXTRACT((F$LOCATE  -
+				(":",INREC)) + 1,WIDTH,INREC),"COLLAPSE,UPCASE"))
+$		ENDIF
+$          
+$		IF F$LOCATE("Records searched:",INREC) .NE. F$LENGTH(INREC)
+$		THEN
+$			WIDTH1 = F$INTEGER(F$LOCATE		-
+				("Direct",INREC) - F$LOCATE("searched:",INREC)) - 10
+$			SIZE1  = F$INTEGER(F$EDIT(F$EXTRACT((F$LOCATE  -
+				(":",INREC)) + 1,WIDTH1,INREC),"COLLAPSE,UPCASE"))
+$			GOTO READLOOP
+$		ENDIF
+$       ENDIF
+$
+$CONTINUEON:
+$
+$	CLOSE					-
+		/ERROR  =  CLOSE_FILE_ERROR	-
+		INFILE
+$
+$	NUMBER_OF_BYTES  =  SIZE  +  SIZE1
+$
+$!  NOW EXTRACT WHAT FTP SAYS IT TRANSFERRED.
+$
+$       IF F$SEARCH("''FTP_CMDS'") .NES. "" 
+$       THEN 
+$               DELETE                          -
+                        /NOCONFIRM              -
+                        /NOLOG                  -
+                         'FTP_CMDS';*
+$       ENDIF  
+$
+$       OPEN                                    -
+                /WRITE                          -
+                /ERROR=OPEN_FILE_ERROR          -
+                 FILE                           -
+                'FTP_CMDS
+$
+$       WRITE                                   -
+                /ERROR=WRITE_FILE_ERROR         - 
+                 FILE                           -
+                 "connect ''ADDRESS'"
+$       WRITE                                   -
+                /ERROR=WRITE_FILE_ERROR         - 
+                 FILE                           -
+                 "user ''USERID' ''PASSWORD'"
+$       WRITE                                   -
+                /ERROR=WRITE_FILE_ERROR         - 
+                 FILE                           -
+                 "sunique"
+$       WRITE                                   -
+                /ERROR=WRITE_FILE_ERROR         - 
+                 FILE                           -
+                 "case on"
+$       WRITE                                   -
+                /ERROR=WRITE_FILE_ERROR         - 
+                 FILE                           -
+                 "ls -l"
+$       WRITE                                   -
+                /ERROR=WRITE_FILE_ERROR         - 
+                 FILE                           -
+                 "close"
+$       CLOSE                                   -
+                /ERROR=CLOSE_FILE_ERROR         -
+                 FILE
+$
+$	IF F$SEARCH("PRCTMPSTR:FTPOPT.DAT") .NES. ""
+$	THEN
+$               DELETE					-
+                        /NOCONFIRM			-
+                        /NOLOG				-
+                         PRCTMPSTR:FTPOPT.DAT;*
+$	ENDIF
+$
+$	DEFINE						-
+		SYS$OUTPUT				-
+		PRCTMPSTR:FTPOPT.DAT
+$		
+$       FTP		                                -
+                /INPUT='FTP_CMDS
+$			
+$	DEASSIGN					-
+		SYS$OUTPUT
+$
+$       OPEN                                            -
+                /READ                                   -
+                /ERROR=OPEN_FILE_ERROR                  -
+                INFILE                                  -
+		PRCTMPSTR:FTPOPT.DAT
+$
+$READLOOP1:
+$
+$       READ                                            -
+                /ERROR=READ_FILE_ERROR                  -
+                /END_OF_FILE=READ_FILE_ERROR            -
+                INFILE                                  -
+                INREC
+$
+$       IF F$LOCATE("''OUTPUTFILE1'",INREC) .EQ. F$LENGTH(INREC)
+$       THEN
+$               GOTO READLOOP1
+$       ELSE
+$               WIDTH = 9
+$               SIZE2 = F$INTEGER(F$EDIT(F$EXTRACT((F$LOCATE  -
+                        ("''OUTPUTFILE1'",INREC)) - 22,WIDTH,INREC),"COLLAPSE,UPCASE"))
+$       ENDIF
+$
+$	NUMBER_OF_BYTES_FTP	=	SIZE2
+$
+$	CLOSE					-
+		/ERROR  =  CLOSE_FILE_ERROR	-
+		INFILE
+$
+$! NOW COMPARE THE 2 TO SEE IF THE FILE TRANSFERRED OKAY.
+$
+$
+$	IF NUMBER_OF_BYTES_FTP  .NE.  NUMBER_OF_BYTES
+$	THEN
+$               WRITE SYS$OUTPUT "TRANSFER ATTEMPT ''COPY_COUNT' FAILED...."
+$		ON ERROR THEN CONTINUE
+$               IF COPY_COUNT .LT. 3
+$               THEN
+$                       WAIT 00:05
+$                       GOTO COPY
+$               ELSE
+$                       FTPSTAT ==      4
+$                       EXIT
+$               ENDIF
+$       ENDIF
+$
+$!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+$!!!!!!!!!!!!!!!!! RENAME THE FILE !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+$!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+$
+$       IF F$SEARCH("''FTP_CMNDS'") .NES. "" 
+$       THEN 
+$               DELETE                          -
+                        /NOCONFIRM              -
+                        /NOLOG                  -
+                        'FTP_CMNDS';*
+$       ENDIF  
+$
+$       OPEN                                    -
+                /WRITE                          -
+                /ERROR=OPEN_FILE_ERROR          -
+                 FILE                           -
+                'FTP_CMDS
+$
+$       WRITE                                   -
+                /ERROR=WRITE_FILE_ERROR         - 
+                 FILE                           -
+                 "connect ''ADDRESS'"
+$       WRITE                                   -
+                /ERROR=WRITE_FILE_ERROR         - 
+                 FILE                           -
+                 "user ''USERID' ''PASSWORD'"
+$       WRITE                                   -
+                /ERROR=WRITE_FILE_ERROR         - 
+                 FILE                           -
+                 "sunique"
+$       WRITE                                   -
+                /ERROR=WRITE_FILE_ERROR         - 
+                 FILE                           -
+                 "case on"
+$       WRITE                                   -
+                /ERROR=WRITE_FILE_ERROR         - 
+                 FILE                           -
+                 "rename ''OUTPUTFILE1' ""''OUTPUTFILE2'"""
+$       WRITE                                   -
+                /ERROR=WRITE_FILE_ERROR         - 
+                 FILE                           -
+                 "close"
+$
+$       CLOSE                                   -
+                /ERROR=CLOSE_FILE_ERROR         -
+                 FILE
+$
+$       FTP                                     -
+                /INPUT='FTP_CMDS
+$
+$!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+$!!!!!!!!!!!!!!!! VERIFY THE RENAME !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+$!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+$
+$       IF F$SEARCH("''FTP_CMDS'") .NES. "" 
+$       THEN 
+$               DELETE                          -
+                        /NOCONFIRM              -
+                        /NOLOG                  -
+                         'FTP_CMDS';*
+$       ENDIF  
+$
+$       OPEN                                    -
+                /WRITE                          -
+                /ERROR=OPEN_FILE_ERROR          -
+                 FILE                           -
+                'FTP_CMDS
+$
+$       WRITE                                   -
+                /ERROR=WRITE_FILE_ERROR         - 
+                 FILE                           -
+                 "connect ''ADDRESS'"
+$       WRITE                                   -
+                /ERROR=WRITE_FILE_ERROR         - 
+                 FILE                           -
+                 "user ''USERID' ''PASSWORD'"
+$       WRITE                                   -
+                /ERROR=WRITE_FILE_ERROR         - 
+                 FILE                           -
+                 "sunique"
+$       WRITE                                   -
+                /ERROR=WRITE_FILE_ERROR         - 
+                 FILE                           -
+                 "case on"
+$       WRITE                                   -
+                /ERROR=WRITE_FILE_ERROR         - 
+                 FILE                           -
+                 "ls -l"
+$       WRITE                                   -
+                /ERROR=WRITE_FILE_ERROR         - 
+                 FILE                           -
+                 "close"
+$       CLOSE                                   -
+                /ERROR=CLOSE_FILE_ERROR         -
+                 FILE
+$
+$	IF F$SEARCH("PRCTMPSTR:FTPOPT.DAT") .NES. ""
+$	THEN
+$               DELETE					-
+                        /NOCONFIRM			-
+                        /NOLOG				-
+                         PRCTMPSTR:FTPOPT.DAT;*
+$	ENDIF
+$
+$	DEFINE						-
+		SYS$OUTPUT				-
+		PRCTMPSTR:FTPOPT.DAT
+$		
+$       FTP		                                -
+                /INPUT='FTP_CMDS
+$
+$	DEASSIGN					-
+		SYS$OUTPUT
+$
+$       OPEN                                            -
+                /READ                                   -
+                /ERROR=OPEN_FILE_ERROR                  -
+                INFILE                                  -
+		PRCTMPSTR:FTPOPT.DAT
+$
+$READLOOP2:
+$
+$       READ                                            -
+                /ERROR=READ_FILE_ERROR                  -
+                /END_OF_FILE=RENAME_ERROR               -
+                INFILE                                  -
+                INREC
+$
+$       IF F$LOCATE("''OUTPUTFILE2'",INREC) .EQ. F$LENGTH(INREC)
+$       THEN
+$               GOTO READLOOP2
+$       ELSE
+$               WIDTH = 9
+$               SIZE2 = F$INTEGER(F$EDIT(F$EXTRACT((F$LOCATE  -
+                        ("''outputfile2'",INREC)) - 22,WIDTH,INREC),"COLLAPSE,UPCASE"))
+$       ENDIF
+$
+$	CLOSE					-
+		/ERROR  =  CLOSE_FILE_ERROR	-
+		INFILE
+$
+$!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+$!!!!!!!!!!!!!!!!! CLEANUP !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+$!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+$
+$CLEANUP:
+$
+$	IF F$SEARCH("''INPUTFILE'") .NES. ""
+$	THEN
+$		RENAME						-
+			'INPUTFILE'				-
+			 PRCTMPSTR:*.SNT;0
+$	ELSE
+$		WRITE SYS$OUTPUT "ERROR DELETING THE INPUTFILE ..."
+$		FTPSTAT	==	4
+$		EXIT
+$	ENDIF	
+$
+$       FTPSTAT ==      1
+$       EXIT 
+$
+$!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+$!!!!!!!!!!!!!!!!!!! ERROR ROUTINES !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+$!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+$
+$OPEN_FILE_ERROR:
+$
+$       WRITE SYS$OUTPUT "ERROR OPENING FTP COMMANDS FILE ..."
+$       FTPSTAT ==      4
+$       EXIT
+$
+$WRITE_FILE_ERROR:
+$
+$       WRITE SYS$OUTPUT "ERROR WRITING TO FTP COMMANDS FILE ..."
+$       CLOSE                                   -
+                /ERROR=FILE_ERROR               -
+                 FILE
+$       FTPSTAT ==      4
+$       EXIT
+$
+$READ_FILE_ERROR:
+$
+$       WRITE SYS$OUTPUT "ERROR CLOSING FTP COMMANDS FILE ..."
+$       FTPSTAT ==      4
+$       EXIT
+$
+$RENAME_ERROR:
+$
+$       WRITE SYS$OUTPUT "ERROR RENAMING FTP FILE ..."
+$	ON ERROR THEN CONTINUE
+$	IF COPY_COUNT .LT.  3
+$	THEN
+$		WAIT 00:05
+$		GOTO COPY
+$	ELSE
+$      	 	FTPSTAT ==      4
+$      		EXIT
+$       ENDIF
+$
+$CLOSE_FILE_ERROR:
+$
+$       WRITE SYS$OUTPUT "ERROR CLOSING FTP COMMANDS FILE ..."
+$       FTPSTAT ==      4
+$       EXIT
+$
+$INPUT_ERROR:
+$
+$	WRITE SYS$OUTPUT "ERROR, NO INPUT FILE SPECIFIED ..."
+$	FTPSTAT ==	4
+$	EXIT
