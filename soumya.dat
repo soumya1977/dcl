@@ -1,0 +1,142 @@
+$!++
+$!     (see comments at bottom)
+$!     This command procedure compares the old sa-backup file with the new
+$!     sa-backup file and creates file for Catalyst.
+$!--
+$!++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++	
+$!+
+$INITIALISATION:
+$       set on
+$       set noverify
+$       set nocontrol     = y
+$       vcs_msg_no       := "01"
+$       vcs_msg          := "PROGRAM_ABNORMALLY_ENDED,_CALL_PROCUREMENT_SUPPORT"
+$	vcs_start	 := "00-PROCESS_STARTED"
+$	vcs_ok		 := "00-PROCESS_SUCCESSFULLY_ENDED"
+$	job_name	 := "CIB020"
+$!
+$       delete           := delete
+$       purge            := purge
+$       define           := define
+$       write            := write
+$       run              := run
+$       submit           := submit
+$       account_name      = f$getjpi("","account")
+$       on error then goto RUNERROR	
+$!
+$       define/process/nolog    C_T     prc:C_T00.DAT     
+$       define/process/nolog    C_T     prc:C_T00.DAT     
+$       define/process/nolog    C_I     prc:C_I00.DAT     
+$       define/process/nolog    P      prc:P_I01_CIB2.DAT
+$!
+$CLEANUP_PREV:
+$!
+$	if f$search("c_i003_file") .nes. ""
+$       Then
+$		 delete/nolog c_i003_file:;*             
+$	Endif
+$!
+$ IS_FILE_THERE:
+$!
+$	OLD_FILE = f$search("c_t002_file:;0")
+$	NEW_FILE = f$search("c_t003_file:;0")
+$!
+$       if (OLD_FILE .eqs. "") .and. (NEW_FILE .eqs. "")
+$       Then
+$  		error_status := '$status
+$		goto EXIT
+$       else
+$	    	if (NEW_FILE .eqs. "")
+$		then
+$		        goto EXIT
+$		Endif
+$!
+$		if (OLD_FILE .eqs. "")
+$		then
+$			create c_t002_file
+$		Endif
+$       Endif
+$!
+$ START:
+$!
+$  	prog_name := CIB00020.EXE
+$  	request "%''account_name'_''job_name'_''vcs_start'"
+$!
+$  	run/nodebug prcexe:'prog_name
+$  	error_status := '$status
+$!
+$  	request "%''account_name'_''job_name'_''vcs_ok'"
+$!	
+$CLEANUP:
+$!
+$	if f$search("c_t002_file") .nes. ""
+$       Then
+$		 delete/nolog c_t002_file:;*             
+$	Endif
+$!
+$	if f$search("c_t003_file") .nes. ""
+$       Then
+$		 copy/nolog c_t003_file c_t002_file             
+$	Endif
+$!
+$ EXIT:
+$!
+$       sh proc/account
+$	Exit error_status
+$!
+$ RUNERROR:
+$  	error_status := '$status
+$  	request "%''account_name'_''prog_name'_''vcs_msg_no'_''vcs_msg'"
+$  	goto EXIT
+$!+
+$!***********************************************************************
+$! Command File and Utility Name: CIB020.COM  
+$!
+$! Purpose:            This command procedure checks for the two sa-backup     
+$!		       files. If both are not found, the program will not run.
+$!                     When there is at least one file, then CIB00020 will run.
+$!                     If in this case one backup-file is missing, it will be
+$!                     created because two files are needed.
+$! 
+$! Method:             VAX scheduler, User job or background
+$!
+$! Requirements:       -none-
+$!
+$! External Command Procedure:  
+$!
+$! External programs:  
+$!
+$! Inputs
+$!
+$!   Files:            C_T003.DAT
+$!		       C_T002.DAT
+$!
+$!   Parameters
+$!
+$!     Required:       -none-
+$!
+$!     Optional:       -none-
+$!
+$!   Symbols:          -none-
+$!
+$!   Logicals:         C_T002_FILE
+$!		       C_T003_FILE
+$!
+$!   Others:           -none-
+$!
+$! Output
+$!
+$!   Files:            C_I003_FILE.DAT
+$!
+$!   Symbols:          -none-
+$!
+$!   Logicals:         C_I003_FILE
+$!
+$!   Others:           -none-
+$!
+$! Revision History:
+$!  
+$!
+$!***********************************************************************
+$!+
+$!
