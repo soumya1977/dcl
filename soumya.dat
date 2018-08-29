@@ -140,3 +140,45 @@ $!
 $!***********************************************************************
 $!+
 $!
+$ After_Time = "00:15"
+$ CurrDay = F$CVTime(,,"Weekday")
+$ If CurrDay .Eqs. "Friday" Then -
+After_Time = F$CVTime("+2-","Absolute","Date")
+$ If CurrDay .Eqs. "Saturday" Then -
+After_Time = "Tomorrow"
+$ Submit/After=" ' 'After_Time' " ... 
+The f$cvtime lexical function provides a conversion to a time format
+  suitable for comparision using the standard DCL string operators.
+ 
+  For details on DCL programming, please see the OpenVMS User's Guide
+  and the Writing Real Programs in DCL book.
+ 
+  In this case, the lexical function f$cvtime returns time strings in
+  either ABSOLUTE or COMPARISON format.   COMPARISON is the default.
+ 
+  $ write sys$output f$cvtime(f$file_attributes("login.com","RDT"))
+    2001-10-19 04:43:33.02
+  $ write sys$output f$cvtime(f$file_attributes("login.com","RDT"),"comparison")
+    2001-10-19 04:43:33.02
+  $ write sys$output f$cvtime(f$file_attributes("login.com","RDT"),"absolute")
+    19-OCT-2001 04:43:33.02
+ 
+ 
+  $ IF F$CVTIME(F$FILE("F1.DAT","CDT")) .GTS. F$CVTIME(F$FILE("F2.DAT","CDT"))
+  $ THEN
+  $!  F1.DAT has a more recent creation date
+  $ ELSE
+  $!  F2.DAT has a more recent creation date
+  $ ENDIF
+Replace that with something like this:
+$ minute = 
+$ day = "today"
+$ hour = f$cvtime("","","hour")
+$ if hour .eqs. "23"
+$ then
+$ day = "tomorrow"
+$ hour = "0"
+$ else
+$ hour = 'hour' + 1
+$ endif
+$ submit /after = "''day'+''hour':''minute'"
