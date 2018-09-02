@@ -64,4 +64,161 @@ The following are examples of creating and using descriptors in C, with the use 
       return RetStat; 
 Static descriptors reference storage entirely under application program control, and the contents of the descriptor data structure can be modified as required (by the application). OpenVMS routines do not modify the contents of a static descriptor, nor do they alter the address or length values stored in the static descriptor. (The term "static" refers to the descriptor data structure, and not necessarily to the storage referenced by the descriptor.) 
 Dynamic descriptors reference storage under the control of the run-time library, and the contents of a dynamic descriptor data structure---once initialized---can only be modified under control of run-time library routines. The dynamic storage referenced by the dynamic descriptor is allocated and maintained by the run-time library routines. Various OpenVMS routines do alter the contents of the descriptor data structure, changing the value for the amount and the address of the storage associated with the dynamic descriptor, as required. Routines can obviously access and alter the contents of the storage referenced by the descriptor. 
+When INTACT is down:
+
+·         MC AUTHORIZE SHOW bnk_oper /BRIEF
+
+·         ED TRU$DEVICE_DATA4_PRO_AUS:[LOG]DEASS_GROUP_LOG.COM;
+
+·         Add the UIC from the AUTHORIZE command above (6 digits)
+
+·         SUBMIT DEASS_GROUP_LOG.COM from above under the banking ID
+
+·         Submit INTUP for the banking region…
+
+·         Submit START_BANKING_INTERFACE in the TRUST user ID
+
+·         Go back to the _SUPP account and check it is now connected…
+
+ 
+
+ Create a blank config file
+
+·         ana/rms/fdl tru$$data1:TRU_PQFILE.DAT              - create the FDL
+
+·         create/fdl=TRU_PQFILE.fdl tru$$data1:TRU_PQFILE.DAT
+
+
+MONTHLY STATEMENTS
+BACKGROUND: On request of Marketing Ops, monthly statements are printed in-house because they are only small. Either take out a temp account or get someone who has a temp account to put them in your FTP directory (if you do this, you’ll have problems with the print queue not being setup on AUD010 though)…
+
+·         show queue/all TRU_@@@_AUS*      - Check 
+
+EOD_J81003_TRANS_STMNT_RUN 
+
+job has completed. It usually finishes in 
+
+the afternoon!
+
+·         dir tru$$statement:/since                        - Look for PE_ files!
+
+·         Edit tru$$statement:filename.ext           - Edit each of the files
+
+·         Replace                                                     - all holdbacks with 000
+
+·         Search tru$$statement:filename.ext <cp>/log/noout
+
+- Get the cp count!
+
+·         @tru$com:cluster_ibs_gen tru$$statement: filename
+
+·         Check with Mktg Ops whether printer is ready….
+
+·         print/que=pr041945 file(s).ext                - print all files to the Mktg Ops printer
+
+
+
+CDD Locked:
+
+·         If you get the error:
+
+%SORT-F-CDDERROR, CDD error at node !AS
+
+-CDD-E-DENIED, node temporarily locked by another user—try again later
+
+·         sho device/files tru$cdd               - See if you can see what is locking the file
+
+·         restart the eod! It is only temporarily locked….
+
+
+
+SCREEN (FORM) IN INTACT DISPLAYS PERCENT’S INSTEAD OF DATA:
+
+This generally means that the build of the environment was not done correctly. The screen fields do not match the fields in the COBOL code….
+
+·         Close the online
+
+·         sea tru$text:*.* “fixed field on form”                           - To get the screen
+
+·         xtfe screen-name                                                             - check its the one in error 
+
+·         scr screen-name                                                               - compile the screen.
+
+·         sea tru$ref:*.cob “screen-name”, “tru$screen”/match=and – find programs 
+
+using that screen
+
+·         com program-name                                                         - compile all these 
+
+programs.
+
+·         sea tru$mms:srv*.mmsi “program-name”                    - check linkages for that 
+
+program.
+
+·         com server-name                                                             - compile the servers that 
+
+use this program. May have to do multiple times!
+
+·         lnk server-name                                                               - re-link those servers! 
+
+May have to do multiples times!
+
+·         @@@sub tru$com:TRU_BUILD_DSPLCL              - rebuild dispatcher!
+
+·         Start the online and re-test!
+
+·         TRU_TMCHID                          - This subroutine clears any/all “hidden” fields.
+
+TRU_TMSPRO                                - This subroutine protects a screen field from being entered or modified.
+
+TRU_TMINI                         - This subroutine initialises the screen form and variable data areas of a TDB.
+
+·         TRU_TMCERR                         - This subroutine clears the error bit on any 
+
+given field that was previously set by a TRU_TMSERR call.
+
+
+DISK SPACE PROBLEMS:
+
+·    Don’t just purge whole disk ‘cause some files programs use old versions of files.
+
+·    anal/disk/repair dsa%%%:                                            - Analyse of disk may 
+
+find some space…
+
+·    dir dsa%%%:[tru*.data*]*.*/excl = *.dat; /size           - Log files shouldn’t be in 
+
+DATA directories!
+
+·    dir/date=(c,m)/size dsa%%%:[000000...]/select=size=(min:100000)
+
+
+FILES:
+
+·         For info on file structures check: TRU$REF:FILE_DEF.LIB and TRU$REF:FILDAT.MAR
+
+·         To convert a SEQUENTIAL file to an INDEXED file:
+
+ 
+
+ANALYSE/RMS/FDL filename.extension
+
+CONVERT/FDL=filename. FDL filename.extension filename.extension
+
+Add /PAD if the records are not the same length!
+
+·         When using logicals and version numbers use ;:version      eg ;:3
+
+·         %SORT-F-OPENOUT, error opening TRU$$DIST_WORK_07:SORTWORK.TMP; as output
+
+-RMS-E-FLK, file currently locked by another user      - Version limit problem!!
+
+·         If you get Syntax errors in FDL files, Remove NAME, OWNER, PROTECTION from TRU$FDL:filename.FDL…
+
+·   create/fdl=tru$fdl:run_request TRU$$RUN_REQUEST- will use the FDL file 
+
+          to re-create the run_request 
+
+file!! If you leave off the TRU$$RUN_REQUEST at the end, it will default to the NAME in the FDL itself!
 
