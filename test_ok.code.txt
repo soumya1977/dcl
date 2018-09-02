@@ -1,0 +1,256 @@
+1$ type test_641.com
+$! Utility to READ a jobs LOG file AND CHECK the error.
+$! Prompts for input which can be a JOBNAME, JOBNUMBER.  No wildcards.
+$!!!!!!!!!!!!!!!!!
+$! Author : saumya Ranjan samantaray
+$!
+$!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+$!
+$INITIALISATION:
+$!
+$! set nover
+$ set verify
+$ SET ON
+$ SET CONTROL=Y
+$ ON ERROR THEN GOTO CLEANUP
+$ ON CONTROL_Y THEN GOTO CLEANUP
+$! PVS_STATE = F$EXTRACT(0,1,F$trnlnm("duplex_state"))
+$! if pvs_state .eqs. "s" then goto progend
+$!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+$! distribution = "USER$DISK : [OPERATOR}ASRS.DIS"
+$!
+$START:
+$ WRITE SYS$OUTPUT " [2J [0;0H"
+$ WRITE SYS$OUTPUT ""
+$ WRITE SYS$OUTPUT "This utility READs a jobs LOG file. No wildcards allo*
+$ WRITE SYS$OUTPUT ""
+$ WRITE SYS$OUTPUT "A directory of all LOG files is displayed, you can then sel*
+$ WRITE SYS$OUTPUT ""
+$ WRITE SYS$OUTPUT "CTRL-Y to exit THE LOG FILE"
+$ WRITE SYS$OUTPUT ""
+$ READ /PROMPT="Enter bis log name : (E to exit) " SYS$COMMAND JOBNAME
+$ IF jobname .EQS. "E" .or. jobname .eqs "e" THEN GOTO THE_END
+$! endif
+$ IF F$LOCATE("*",JOBNAME) .NE. F$LENGTH(JOBNAME) -
+  .OR. F$LOCATE("%",JOBNAME) .NE. F$LENGTH(JOBNAME) -
+  .OR. F$EDIT(JOBNAME,"TRIM") .EQS. ""
+$ THEN
+$   WRITE SYS$OUTPUT " [1mNo wildcard characters allowed! [0m"
+$   WAIT 00:00:02
+$   GOTO START
+$ ENDIF
+$!
+$REDO:
+$ WRITE SYS$OUTPUT ""
+$ WRITE SYS$OUTPUT "Please wait..."
+$!
+$!
+$
+$  WRITE SYS$OUTPUT ""
+$  write sys$output ""
+$  write sys$output ""
+$  write sys$output "CTRL Z TO RETURN HERE!!"
+$  write sys$output ""
+$  write sys$output "CTRL Y TO RETURN TO MENU!!"
+$  write sys$output ""
+$  write sys$output ""
+$
+$ BISFILE1 = f$search("BIS_550.LOG;0",1)
+$ SH SYM  BISFILE1
+$ IF  (BISFILE1 .eqs. "") THEN  EXIT
+$ ORG = f$FILE_ATTRIBUTES(BISFILE1,"ORG")
+$ IF (ORG .EQS. "SEQ")
+$   THEN
+$       WRITE SYS$OUTPUT BISFILE1
+$      TOPVERSION = F$EXTRACT(32,2,BISFILE1)
+$ ENDIF
+$BACK_UP_FILE:
+$! BACKUP /IGNORE = INTERLOCK BIS_550.LOG;'TOPVERSION SYS$SCRATCH
+$ GOTO CHECK_PREV
+$CHECK_PREV:
+$ PREVERSION = TOPVERSION - 1
+$ SHOW SYM PREVERSION
+$! BACKUP /IGNORE = INTERLOCK BIS_550.LOG;'PREVERSION SYS$SCRATCH
+$ create bislog1.dat
+$ APPEND/log BIS_550.LOG;'PREVERSION,;'TOPVERSION  BISLOG1.dat
+$!exit
+$Bis_550_LOOP1:
+$!
+$!!!!!Read the bis 550  file!!!!!
+$   COUNT = 0
+$   OPEN /ERROR=CLEANUP LOGSPEC19 BISLOG
+$   read/end_of_file=bis_loop LOGSPEC19 record
+$   rec1= f$extract (52,5,record)
+$   CHECKTIME = F$EXTRACT (16,11,RECORD)
+$   SH SYMBOL CHECKTIME
+$  SH TIME
+$   THRESHOLD_TIME = F$CVTIME("-00:05")
+$   SH SYMBOL THRESHOLD_TIME
+$   LOG_TIME_COMPARISION = F$CVTIME(CHECKTIME)
+$
+$! EXIT
+$   SH SYMBOL REC1
+$    if rec1 .eqs. "START"
+$    Then
+$          GOTO CHECK_MESSAGE_41
+$    ELSE
+$       GOTO BIS_550_LOOP1
+$    ENDIF
+$!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+$
+$CHECK_STAMP_TIME:
+$!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+$  IF LOG_TIME_COMPARISION .LTS. THRESHOLD_TIME
+$     THEN
+$!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+$! WE NEED TO SEND THE ALERT MESSAGE
+$!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+$  ENDIF
+$!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+$!Request for next retrivals from ILVS/PVS
+$!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+$CHECK_MESSAGE_41:
+$  COUNT = COUNT + 1
+$   sh symbol rec1
+$   read/end_of_file=bis_loop LOGSPEC19 record
+$!
+$   rec2 = f$extract (67,6,record)
+$   sh sym rec2
+$   if rec2 .eq. "'41000"
+$   THEN
+$       SHOW SYMBOL RECORD
+$       trim_id = f$extract(f$length(record)-4,1,record)
+$       SHOW SYMBOL trim_id
+$       GOTO CHECK_TRIM_ID
+$    ELSE
+$       GOTO  CHECK_MESSAGE_41
+$    ENDIF
+$!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+$!Request for next retrivals from ILVS/PVS AND CHECK THE TRIM
+$!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+$CHECK_TRIM_ID:
+$
+$    if f$edit(trim_id,"upcase") .eqs. "A"
+$    then
+$          goto CHECK_62_MESSAGE
+$    endif
+$
+$    if f$edit(trim_id,"upcase") .eqs. "B"
+$    then
+$          WHEN = F$EXTRACT (0,25,RECORD)
+$          SH SYMBOL WHEN
+$          goto  CHECK_64_MESSAGE
+$    endif
+$!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+$!PVS/ILVS will respond with 62 message
+$!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+$CHECK_62_MESSAGE:
+$          count  = COUNT + 1
+$          read/end_of_file=END LOGSPEC19 record
+$!          REC3 = F$EXTRACT (54,3,RECORD)
+$    SH SYM RECORD
+$    IF F$LOCATE("'62",RECORD) .EQS. F$LENGTH(RECORD)
+$        THEN  GOTO CHECK_62_MESSAGE
+$    ENDIF
+$          model_62 = f$extract(73,7,record)
+$          colour_62 = f$extract(80,7,record)
+$          SHOW SYMBOL MODEL_62
+$          SHOW SYMBOL COLOUR_62
+$          GOTO CHECK_42_MESSAGE
+$
+$!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+$!if sucessful retrival and request is accepted ,then PBS will confirm the
+$!! 42 messages  if not accepted pvs/ilvs hold the message with 63
+$!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+$CHECK_42_MESSAGE:
+$!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+$         count  = count + 1
+$         read/end_of_file=bis_loop LOGSPEC19 record
+$   IF F$LOCATE("'42",RECORD) .EQS. F$LENGTH(RECORD) THEN GOTO CHECK_42_MESSAGE
+$        model_42 = f$extract(86,7,record)
+$        colour_42 = f$extract(93,7,record)
+$        sh sym model_42
+$        sh sym model_62
+$        write sys$output "Normal Sequence"
+$        GOTO COMPARE_42_62_MESSAGE
+$!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+$!!!if there is NO order to  satsify corresponding to
+$!!! the 62 messages,pbs will return with 43 message
+$!!! ILVS put the order to hold file
+$!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+$CHECK_43_MESSAGE:
+$!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+$        count  = count + 1
+$        read/end_of_file=bis_loop LOGSPEC19 record
+$!        REC5 = F$EXTRACT (67,3,RECORD)
+$     IF F$LOCATE("'43",RECORD) .EQS. F$LENGTH(RECORD) THEN GOTO CHECK_43_MESSAGE
+$        model_43 = f$extract(86,7,record)
+$        colour_43 = f$extract(93,7,record)
+$        sh sym model_43
+$        sh sym model_63
+$        GOTO CHECK_HOLD_MESSAGE
+$!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+$CHECK_64_MESSAGE:
+$!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+$    WRITE SYS$OUTPUT " CHECKING 64 MESSAGE ENTRY "
+$!         WRITE SYS$OUTPUT "---------------------------"
+$!
+$ count = count +1
+$ goto bis_550_loop1
+$! BIS_LOOP:
+$! CLOSE LOGSPEC19
+$!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+$CHECK_HOLD_MESSAGE
+$!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+$     HLD_FILE  = "USER$DISK:[SSAMANTA]HOLD_REC.DAT"
+$     OPEN/WRITE HOLD_REC   HLD_FILE
+$     RECORD1 = F$EXTRACT(55,50,RECORD)
+$     WRITE      HOLD_REC  RECORD1
+$     CLOSE HOLD_REC
+$     count = count + 1
+$     goto bis_550_loop1
+$! bis_loop:
+$! CLOSE LOGSPEC19
+$!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+$COMPARE_42_62_MESSAGE:
+$!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+$
+$  WRITE SYS$OUTPUT "CHECKING COMPARING "
+$  if (model_62 .eqs. model_42) .and. (colour_62 .eqs. colour_42)
+$  then
+$      write sys$output "GOOD SEQUENCE RECORD"
+$      SEQ_FILE  = "USER$DISK:[SSAMANTA]SEQ_REC.DAT"
+$      OPEN/WRITE SEQ_REC   SEQ_FILE
+$      WRITE      SEQ_REC  RECORD
+$         CLOSE SEQ_REC
+$  ELSE
+$          GOTO CHECK_43_MESSAGE
+$       ENDIF
+$ count = count + 1
+$ goto Bis_550_LOOP1
+$! exit
+$ BIS_LOOP:
+$ CLOSE LOGSPEC19
+$!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+$ENDOFFILE:
+$!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+$CLEANUP:
+$  IF F$TRNLNM("SYS$COMMAND") .EQS. "SYS$INPUT"
+$  THEN
+$      DEASSIGN SYS$COMMAND
+$     IF F$SEARCH(JOBFILE) .NES. ""
+$     THEN
+$        DELETE /NOLOG /NOCONF 'JOBFILE;
+$      ENDIF
+$      IF F$SEARCH(BISFILE) .NES. ""
+$      THEN
+$        DELETE /NOLOG /NOCONF 'BISFILE;
+$      ENDIF
+$  ENDIF
+$BIS_LOOP:
+$the_end:
+$!progend:
+$! JOBNAME = F$PARSE(F$ENVIRONMENT("PROCEDURE"),,,"NAME","SYNTAX_ONLY")
+$END:
+$       EXIT
+[End of file]

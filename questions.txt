@@ -1,0 +1,67 @@
+How to resolve LINK-I-DATMISCH errors?
+The message LINK-I-DATMISCH is informational, and indicates that the version of the specified shareable image found in the system shareable image directory does not match the version of the shareable image that was originally loaded into IMAGELIB.OLB, one of the OpenVMS libraries typically searched by the LINKER. 
+From a privileged username, you can usually completely repair this via the following DCL command: 
+
+$ LIB/REPLACE/SHARE SYS$LIBRARY:IMAGELIB.OLB SYS$SHARE:LIBRTL.EXE 
+
+2.
+How do I activate the OpenVMS Debugger from an application?
+
+#include {lib$routines.h} 
+#include {ssdef.h} 
+#include {string.h} 
+ 
+main() 
+    { 
+    char ascic_debug_commands[128]; 
+    char *dbgcmd = "*show calls;go;exit"; 
+ 
+    strcpy( ascic_debug_commands, dbgcmd ); 
+    ascic_debug_commands[0] = (char) strlen( dbgcmd ) - 1; 
+ 
+    lib$signal(SS$_DEBUG,1,ascic_debug_commands); 
+ 
+    return 1; 
+    } 
+3.
+Why do lib$spawn, lib$set_symbol fail in detached processes?
+The processing within run-time library (RTL) calls such as lib$attach, lib$disable_ctrl, lib$do_command, lib$enable_ctrl, lib$get_symbol, 
+lib$run_program, lib$set_symbol, lib$set_logical, and lib$spawn, is dependent on and requires the presence of a command language interpreter (CLI), such as DCL.
+ Without a CLI present in the current process, these calls will fail with a "NOCLI, no CLI present to perform function" error. 
+Detached processes typically do not have a CLI present. 
+In place of lib$spawn, sys$creprc can often be used. The context of the parent process (symbols and logical names) will not be propogated into the subprocess when sys$creprc is used, though when there is no CLI present in the process this (lack of) propogation is moot. 
+To create a detached process with a CLI, you must specify LOGINOUT as the target image as discussed elsewhere in the FAQ, or only use these calls (and any other calls requiring a CLI) from images that are running in an "interactive", "batch", or "other" mode process. 
+Also note that the lib$spawn and the C system call will fail in a CAPTIVE login environment. The lib$spawn call can be gotten to work in this environment with the specification of the TRUSTED flag. 
+
+What is a descriptor?
+A descriptor is a data structure that describes a string or an array. Each descriptor contains information that describes the type of the data being referenced, the size of the data, and the address of the data. It also includes a description of the storage used for the data, typically static or dynamic. Descriptors are passed by reference. 
+The following are examples of creating and using descriptors in C, with the use of the angle brackets normally expected by the C include statements deliberately altered in deference to HTML: 
+
+    #include {descrip.h} 
+    #include {lib$routines.h} 
+    #include {stsdef.h} 
+    int RetStat; 
+    char TxtBuf[TXTSIZ] 
+    struct dsc$descriptor StaticDsc = 
+      { 0, DSC$K_DTYPE_T, DSC$K_CLASS_S, NULL }; 
+    struct dsc$descriptor DynDsc = 
+      { 0, DSC$K_DTYPE_T, DSC$K_CLASS_D, NULL }; 
+    int DynDscLen = 255; 
+    $DESCRIPTOR( ConstDsc, "This is a string" ); 
+ 
+    /* finish setting up a static descriptor */ 
+    StaticDsc.dsc$w_length      = TXTSIZ; 
+    StaticDsc.dsc$a_pointer     = (void *) TxtBuf; 
+ 
+    /* finish setting up a dynamic descriptor */ 
+    RetStat = lib$sget1_dd( &DynDscLen, &DynDsc ); 
+    if ( !$VMS_STATUS_SUCCESS( RetStat ) ) 
+      return RetStat; 
+ 
+    /* release the dynamic storage */ 
+    RetStat = lib$sfree1_dd( &DynDsc ); 
+    if (!$VMS_STATUS_SUCCESS( RetStat )) 
+      return RetStat; 
+Static descriptors reference storage entirely under application program control, and the contents of the descriptor data structure can be modified as required (by the application). OpenVMS routines do not modify the contents of a static descriptor, nor do they alter the address or length values stored in the static descriptor. (The term "static" refers to the descriptor data structure, and not necessarily to the storage referenced by the descriptor.) 
+Dynamic descriptors reference storage under the control of the run-time library, and the contents of a dynamic descriptor data structure---once initialized---can only be modified under control of run-time library routines. The dynamic storage referenced by the dynamic descriptor is allocated and maintained by the run-time library routines. Various OpenVMS routines do alter the contents of the descriptor data structure, changing the value for the amount and the address of the storage associated with the dynamic descriptor, as required. Routines can obviously access and alter the contents of the storage referenced by the descriptor. 
+
