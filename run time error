@@ -1,0 +1,220 @@
+How to locate runtime errors in OpenVMS applications code
+
+The following was written for a development group that was having problems understanding error handling and traceback reporting on OpenVMS.
+
+Introduction
+
+OpenVMS has a comprehensive and consistent way of handling errors produced by software running under the control of the operating system. When a software or hardware error is detected, the operating system either returns a condition code or value that identifies the error, or signals the condition. If the operating system signals a condition, generally an error is displayed, and the code terminates or continues, depending on the severity of the error.
+
+Most runtime errors are anticipated by the author of the code, and special sections of code are written to deal with or handle those errors. For example, a programmer writing code to look up a value in a database would be wise to include a section to handle a "record not found" condition when the user specifies a value not in the database.
+
+This article provides a practical example of methods used to locate a section of code that causes an error that has not been anticipated by the programmer, thus causing the program to terminate unexpectedly.
+
+Example code
+
+The article will make use of some example code to demonstrate the methodology used to locate and correct errors. The code is written in the C programming language, with the hope that the program should be comprehensible, even for programmers with no experience in C. There are two separate modules, demo.c and bad.c. These are displayed below.
+
+Firstly, module demo.c
+
+
+
+        #include <stdio.h>
+        #include <stdlib.h>
+		
+        extern void bad (int *i);
+		   
+        int main (void) {
+		   
+        int i;
+
+            (void)printf ("About to do a Bad Thing\n");		   
+            bad (&i);
+        }
+
+And module bad.c
+
+
+
+        #include <stdio.h>
+        #include <stdlib.h>
+
+        extern void bad (int *i) {
+
+            (void)printf ("In bad()\n");
+            i = NULL;
+            *i = 1;
+        }
+
+This code declares an integer i, and calls a function bad() to load an integer passed by reference with the value 1. Unfortunately, the author has made a mistake and accidently overwritten the address of i with NULL, so when the code is run, an access violation occurs.
+
+Compiling, linking, and running this code produces the following output.
+
+
+
+  $ cc/list/machine demo.c
+  $ cc/list/machine bad.c
+  $ link/map/full demo.obj,bad.obj
+  $ run demo.exe
+  About to do a Bad Thing
+  In bad()
+  %SYSTEM-F-ACCVIO, access violation, reason mask=04, virtual address=000000000000
+  0000, PC=0000000000020130, PS=0000001B
+  %TRACE-F-TRACEBACK, symbolic stack dump follows
+    image    module    routine             line      rel PC           abs PC
+   DEMO  BAD  bad                          2417 0000000000000030 0000000000020130
+   DEMO  DEMO  main                        2420 00000000000000E4 00000000000200E4
+   DEMO  DEMO  __main                         0 0000000000000068 0000000000020068
+                                              0 FFFFFFFF8026D4DC FFFFFFFF8026D4DC
+
+Output like this is called a traceback dump, and can be used in conjunction with the compiler listings and linker map to locate the line of code that caused the error.
+
+Reading the traceback
+
+The error message
+
+The first line of the traceback indicates the condition code that caused the program to terminate. All messages issued by the operating system conform to the general format
+
+%Facility-Severity-Ident, Text
+The facility indicates what part of the operating system signalled the error condition. In this case, the operating system itself indicated an error. The severity in this case is "F", indicating a fatal or severe error. The convention for condition codes on OpenVMS is that if the low order bit is set (the condition code is an odd number), the condition code indicates a success status. If the low order bit is clear (the condition code is an even number), the condition code indicates an error.
+
+The severity of the condition code is contained in the three low order bits, therefore there are eight possible severity levels, as shown in the following table.
+
+Value	Abbreviation	Severity	Response
+0	W	Warning	Execution continues, unpredictable results
+1	S	Success	Execution continues, expected results
+2	E	Error	Execution continues, erroneous results
+3	I	Information	Execution continues, informational message displayed
+4	F	Severe error (Fatal)	Execution terminates, no output
+5	?	 	Reserved
+6	?	 	Reserved
+7	?	 	Reserved
+The third field in the error message is the identification of the error. In this case that error is an access violation, indicating that the code attempted to access a section of memory that is protected against reading or writing, or the memory address is illegal.
+
+Armed with the facility and identification of the condition code, a wealth of detail can be obtained about the specific error by using the $ HELP/MESSAGE command.
+
+
+
+$ HELP/MESSAGE/FACILITY=SYSTEM ACCVIO
+
+ ACCVIO,  access violation, reason mask='xx', virtual
+          address='location', PC='location', PSL='xxxxxxxx'
+
+  Facility:     SYSTEM, System Services
+
+  Explanation:  An image attempted to read from or write to a memory location
+                that is protected from the current mode. This message
+                indicates an exception condition and is followed by a register
+                and stack dump to help locate the error.
+                            .
+                            .
+                            .
+							
+Digging Deeper
+
+In the case of access violations, the text of the message contains a lot of extremely useful information.
+
+The reason code contains information as to why the access violation occurred. The most usual reason codes are being unable to read or
+ write to an address from the current processor mode, or attempting to access memory that does not exist.
+ For full details on the reason code, please see the OpenVMS Programming Concepts Manual.
+
+In this case, the value 4 indicates that the attempted access was a modify.
+
+The virtual address is generally the address that the code attempted to access and could not. There are some exceptions to this rule.
+ Again, see the "Programming Concepts Manual" for further details. In the example, the code attempts to access virtual address zero, 
+which, by definition is an illegal address. All addresses below 20016 are by definition, illegal.
+
+The next piece of information contained in the message is the PC, or program counter. This is the address in the code that indicates 
+exactly where the exception occurred.
+
+The last piece of information is the PS, or processor status. This value tells us things 
+like the current mode of the CPU. Unless you are developing privileged code, you generally don't have to concern yourself with this value.
+
+The Traceback
+
+Or how to find the offending code the easy way
+
+The information below the %TRACE-I-TRACEBACK message lists information that you can use to track down the code that generated the error. Each line represents a call frame, and each line again contains valuable information that lets you know exactly where the error occurred. In this case, it's extremely easy to locate the line of code that caused the error, as routine, module, and line numbers are listed.
+
+The traceback tells us that routine __main called the main() routine, which then called routine bad() at line 2420. The routine bad() then incurred an error at line 2417. Looking in the bad.lis listing file (you did save the listing files, didn't you?) you can determine that the line
+
+
+
+      1    2417     *i = 1;
+
+is the one that caused the error.
+
+Obviously, the constant value 1 is not the cause of the error. That must mean that the address in the integer pointer i must be incorrect.
+ In this trivial example, it's obvious that this is true.
+
+By the way, if you're wondering where the routine __main came from, this routine is created by the C compiler to perform some environment setup before it passes control to your program. For example, this sets up the argument variables argc and argv if your program makes use of them. It also sets up the stack to enable your code to reference variables that are stored there.
+
+What about the hard way?
+
+In some cases, the routine name, module name, and line numbers are not available when an error occurs. This can happen if the stack becomes corrupted, or privileged code that was linked with the /NOTRACEBACK qualifier is involved (the /NOTRACEBACK qualifier is often used to enable the code to be installed with privileges). In this case, the relative and absolute addresses, combined with the map and listing files, can be used to locate the erroneous code.
+
+In case you haven't already realized, the traceback is in reverse order. The bottom line of the traceback (the one containing the absolute PC in system space: FFFFFFFF8026D4DC16) is the image activator. In the case of a C program, the next line up will be the __main routine, and the next line will be the main() routine in your code. And the next line up will be a routine that was called by main(), and so on.
+
+Looking at the absolute PC of the main() routine, we find the absolute address column indicates 200E416. This is where the call to the bad() routine occurs, and the absolute address 2013016 is where the error actually occurs.
+
+Armed with this information, we look in at the "Program Section Synopsis" section of the demo.map linker map file for the psect that contain these absolute addresses (some of the columns to the right have been removed to allow this to fit on the screen):
+
+
+
+$CODE$                          00020000 00020147 00000148 
+                DEMO            00020000 000200FF 00000100
+                BAD             00020100 00020147 00000048 
+
+This part of the map is telling us where in memory the sections of the code will be loaded at run time. $CODE$ is the name of the psect. The first line is telling us that the program section will be loaded at 2000016, and its end is at 2014716, and it's 14816 bytes in length.
+
+The next two lines tell us what modules contributed to code in the psect, and where they are in memory.
+
+Looking at the first address, we see that it is in the section contributed by module DEMO (i.e., 200E416 falls between 2000016 and 200FF16). And the second address falls in the section contributed by module BAD. This will come as no surprise with our example, but in the situation where the module or routine names are not available in the stack dump, we would now have a reference so we can look at the appropriate listing file.
+
+The listing file
+
+Let's look at the relative address of the first line of the dump: 3016. If we look in the bad.lis listing file for the machine code listing, we will see something like the following (this is an Alpha listing file; IA64 machine code is a different format, but the technique is exactly the same):
+
+
+
+                                .PSECT  $CODE$, OCTA, PIC, CON, REL, LCL, SHR,-
+                                        EXE, NORD, NOWRT
+             0000       BAD::                                           ; 002413
+23DEFFE0     0000               LDA     SP, -32(SP)
+221B0030     0004               LDA     R16, 48(R27)                    ; 002415
+B75E0008     0008               STQ     R26, 8(SP)                      ; 002413
+
+47E03419     000C               MOV     1, R25                          ; 002415
+A75B0020     0010               LDQ     R26, 32(R27)
+B77E0000     0014               STQ     R27, (SP)                       ; 002413
+B7BE0010     0018               STQ     FP, 16(SP)
+47FE041D     001C               MOV     SP, FP
+A77B0028     0020               LDQ     R27, 40(R27)                    ; 002415
+6B5A4000     0024               JSR     R26, DECC$GXPRINTF       ; R26, R26
+47E03400     0028               MOV     1, R0                           ; 002417
+2FFE0000     002C               UNOP
+B01F0000     0030               STL     R0, (R31)
+47FD041E     0034               MOV     FP, SP                          ; 002418
+A75D0008     0038               LDQ     R26, 8(FP)
+A7BD0010     003C               LDQ     FP, 16(FP)
+23DE0020     0040               LDA     SP, 32(SP)
+6BFA8001     0044               RET     R26
+
+The first column of numbers is the actual machine code. The second column is what we are interested in. It shows the offset from the start of the module. Scanning down this column, we look for 3016. This line is the exact line of machine code that caused the error.
+
+In this machine code listing, comments are delimited by a semicolon (on IA64, they are delimited by a double slash sequence). The numbers in the comments in this case refer back to the lines of C code that generated the machine instructions. Of course, a single line of C can and does generate multiple lines of machine code. That's why not every line has a corresponding comment in the machine code listing.
+
+The listing file has a comment on the first line of machine code associated with each line of C. So, in our case, the failing instruction is associated with line 2417.
+
+
+
+47E03400     0028               MOV     1, R0                           ; 002417
+2FFE0000     002C               UNOP
+B01F0000     0030               STL     R0, (R31)
+
+Looking back at the C source in the listing file, we see this is the line that we discovered previously using the easy way.
+
+Conclusion
+
+We have seen with a simple example two methods of locating the failing code in
+ a program written on OpenVMS. Because OpenVMS is consistent in the way it signals and handles conditions,
+ these methods will work for any language that is supported on OpenVMS.
