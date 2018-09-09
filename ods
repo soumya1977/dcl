@@ -1,0 +1,17 @@
+On Disk Structure Both disks and CDs may employ the ODS-1, ODS-2, and ODS-5 structures.  ODS-3 and ODS-4 are labels for the ISO 9660 and High Sierra CD formats, respectively. The following table differentiates the full range of structures OpenVMS uses. File Structure Options on OpenVMS Systems 
+ Structure Description ODS-1 VAX only. For compatibility with older operating systems. ODS-2 VAX and Alpha. Default disk structure. ODS-5 Alpha. Supports extended file system. Used for compatibility with operating systems like Windows NT/2000/XP that require an expanded character set or deeper directory structures than ODS-2. ISO 9660 ISO format files (ODS-3). High Sierra Variant of ISO 9660 (ODS-4). Dual format Both 9660 and ODS formats on same CD. Foreign Disk and CDs. System makes no assumptions about the file structure. 
+ 
+  Information on writing CDs on OpenVMS is at http://www.openvms.compaq.com/wizard/openvms_faq.html#FILE7. 
+ 
+Comparison of ODS-2 and ODS-5 A number of structure characteristics are the same for ODS-2 and ODS-5. There are also some crucial differences. The following table presents the common characteristics. 
+Rev
+
+Common Characteristics for ODS-2 and ODS-5 
+ Characteristic Description File versions 32,767 limit, version limits supported Disk Protected objects Disk quotas  Supported Multivolume files and volume sets Supported Placement control Supported Caches Caching of file header blocks, file identification slots, and extent entries Clustered allocation Supported Backup home block Supported Protection code E E means execute access Enhanced protection features (for example, access control lists) Supported 
+ 
+In each of these characteristics, the older ODS-1 (VAX only) had differences. Also of interest is the support for volume sets. If a file or a directory tree requires more space than a single volume affords, two or more volumes may be bound together so that OpenVMS treats them as a single volume.  In particular, the operating system will:  Store files on any volume in the set that has free space.  Attempt to use space evenly over all volumes in a set. 
+Comparison of ODS-2 and ODS-5 (Continued) The following table presents a comparison of ODS-2 and ODS-5 formats for those structure characteristics where they differ. Differences Between ODS-2 and ODS-5 Formats 
+ Characteristic ODS-2 ODS-5 File name length 39.39 characters 238 bytes, including the dot and file type.  For Unicode, 236 bytes is 119 characters, including the dot and the file type. Character set Uppercase alphanumeric plus hyphen (-), dollar sign ($), and underscore (_) ISO Latin-1, Unicode Directories Alpha 255 * VAX 8 (with rooted logical, 16) Alpha 255 VAX 8 (with rooted logical, 16) System disk Can be an ODS-2 volume Starting with OpenVMS V7.3-1 an ODS5 volume can be a system disk. Page file, swap file, parameter (.PAR) file and other system files Supported Not supported OpenVMS cluster access Files can be shared across a cluster Files can be shared across a cluster.  However, only computers running OpenVMS 7.2 or later can mount ODS-5 disks (VAX computers can see only files with ODS-2 names.). * Looks the same, but prior to OpenVMS 7.2, RMS limited directory levels to 8 or 16. 
+ 
+ODS-5 provides special but limited extensions, such as long file names, Unicode characters, and deep directory structures, but it also imposes restrictions, particularly the requirement for OpenVMS 7.2 or later. VAX systems running those versions can mount and manage ODS-5 volumes and can write ODS-2 compliant files to an ODS-5 volume. 
+Rev
