@@ -1,0 +1,390 @@
+Add a new user to experiment on
+For this article I added a new test user on my OpenVMS 8.4 install. It has the same privileges as the system user so be carefull with it. Change the root device and directory if needed:
+ $ SET DEFAULT SYS$SYSTEM
+ $ RUN AUTHORIZE
+ ADD REMY /PASSWORD=TEMP /OWNER="Remy van Elst" /DEV=DKA0 /DIR=[USERS.REMY] /UIC=[200,201] /FLAG=NODISUSER /PRIV=ALL 
+Create the home folder for the user and set permissons:
+$ CREATE /DIRECTORY DKA0:[USERS.REMY]
+$ SET DIRECTORY /OWNER=REMY DKA0:[USERS.REMY]
+Logout the SYSTEM user:
+ $ LOG
+Login as your new user and change the password (which is TEMP):
+   Welcome to OpenVMS (TM) Alpha Operating System, Version V8.4
+
+Your password has expired; you must set a new password to log in
+
+
+New password:
+Verification:
+
+$
+Try to create a file and see if you setup the folder and permissions correctly:
+$ dir
+%DIRECT-W-NOFILES, no files found
+$ create example
+hello
+CTRL+Z
+
+$ dir
+
+Directory DKA0:[USERS.REMY]
+
+EXAMPLE.;1
+
+Total of 1 file.
+Do note that OpenVMS passwords are case-insensitive. Read here for more information, there is a flag you can toggle to make passwords case sensitive.
+A user password can contain up to 32 alphanumeric and special characters. Unless your system manager has set the PWDMIX flag in your authorization account record, the only special characters permitted are the dollar sign and underscore. Without the PWDMIX authorization, all lowercase characters are converted to uppercase before the password is encrypted. For example, "eagle" is the same as "EAGLE."
+Furthermore, spaces are ignored:
+Blank spaces are permissible within a password, but they are not considered part of the password, and OpenVMS ignores them. For example, "MY PASSWORD" is an acceptable password, but the system only records "MYPASSWORD." This means that "MYPA SSWORD" is also a valid password for the account in question. 
+Licensing error?
+After adding the user and trying to login I got a licensing error:
+No license is active for this software product
+It also spammed the terminal with AUDIT server logs:
+%%%%%%%%%%%  OPCOM  10-MAY-2018 19:52:05.87  %%%%%%%%%%%
+Message from user AUDIT$SERVER on REMY1
+Security alarm (SECURITY) and security audit (SECURITY) on REMY1, system id: 104
+9
+Auditable event:          Local interactive login failure
+Event time:               10-MAY-2018 19:52:05.87
+PID:                      0000021C
+Process name:             REMY
+Username:                 REMY
+Process owner:            [REMY]
+Terminal name:            _TTA0:
+Image name:               REMY1$DKA0:[SYS0.SYSCOMMON.][SYSEXE]LOGINOUT.EXE
+Posix UID:                -2
+Posix GID:                -2 (%XFFFFFFFE)
+Status:                   %LICENSE-F-NOLICENSE, no license is active for this software product
+Somehow all my licenses disappeared:
+$ SHOW LICENSE /USAGE
+
+View of loaded licenses from node REMY1                 10-MAY-2018 19:58:37.10
+%SHOW-I-NOLICENSE, no licenses exist
+After re-adding my hobbyist license it still did not work. I had to add the hostname (REMY1) for the error to go away:
+$ LICENSE MODIFY OPENVMS-ALPHA /INCLUDE=REMY1
+After which all was well and I could login with the new user:
+$ SHOW LICENSE OPENVMS-ALPHA
+
+Active licenses on node REMY1:
+
+------- Product ID --------    ---- Rating ----- -- Version --
+Product            Producer    Units Avail Activ Version Release    Termination
+OPENVMS-ALPHA      DEC             0  0     100    0.0  (none)       1-APR-2019
+Unsure why this happens. Now let's get on to the exciting stuff.
+Secondary password
+The first thing I want to cover is the secondary password. A user account on OpenVMS can have more than 1 password, the main password and the secondary password. This can be usefull in high-security environments where two people are needed to access a user account (that could have special privileges). Read more on UIC codes in the documentation.
+Chapter 4, User accounts, Overview states:
+Your system manager may create user accounts that require zero, one, or two passwords, but accounts with one password are the norm.
+From the documentation: 
+Secondary password. The second of two passwords to be entered for an account requiring both primary and secondary passwords. The secondary password provides an additional level of security on user accounts. Typically, the primary user does not know the secondary password; a supervisor or other key person must be present to supply it. For certain applications, the supervisor may also decide to remain present while the account is in use. Thus, secondary passwords facilitate controlled logins and the actions taken after a login. Secondary passwords can be time-consuming and inconvenient. They are justified only at sites with maximum security requirements. An example of an account that justifies dual passwords would be one that bypasses normal access controls to permit emergency repair to a database. 
+The text above already gives an example and I can imagine a few more. Take two users of different functions in the organization, say a programmer and a director. If the sysadmins are not available (hit by a bus, holiday) these two users can gain access to a special account to do maintenance. In other operating systems you can achieve this by giving either one a part of the password. The OpenVMS way feels more thought out since you can check which accounts require secondary passwords and the different password attempts are logged as well. 
+To set up a secondary password, open the AUTHORIZATION program and use MODIFY.
+ $ SET DEFAULT SYS$SYSTEM
+ $ RUN AUTHORIZE
+ MODIFY REMY /PASSWORD=("", example) /NOPWDEXPIRED
+The first user password is not modified, hence the ("",. If you want to modify both passwords, replace the "" with a password. If you have a user with two passwords and want to modify only the first password, use /PASSWORD=example. To modify both passwords, /PASSWORD=(FIRST_PASS, SECONDARY_PASS). 
+The /NOPWDEXPIRED flag is set because otherwise the user would have to change the secondary password at first login and in the use case of a secondary password that is not what you want (since it involves two users).
+If you logout (LOG) and login as the user, you will be asked for a password twice. The first prompt is for the first password, the second for the secondary password:
+ Welcome to OpenVMS (TM) Alpha Operating System, Version V8.4
+
+Username: remy
+Password:
+Password:
+   Welcome to OpenVMS (TM) Alpha Operating System, Version V8.4
+    Last interactive login on Friday, 11-MAY-2018 20:20:33.58
+
+$
+To remove a secondary password, remove all passwords from a user and set a new password:
+$ SET DEFAULT SYS$SYSTEM
+$ RUN AUTHORIZE
+UAF> MODIFY REMY /NOPASSWORD
+%UAF-I-PWDLESSMIN, new password is shorter than minimum password length
+%UAF-I-MDFYMSG, user record(s) updated
+UAF> MODIFY REMY /PASSWORD=TEMP
+%UAF-I-MDFYMSG, user record(s) updated
+When the user logs in now, it will require one password and the user has to change that after first login.
+You can read more on the AUTHORIZE program here.
+User ID's (UIC) are not unique
+The second interesting point I want to show and talk about is the UIC uniqueness. Linux has the UID and GID, OpenVMS combines them into one number. A UIC consists of: GROUP,MEMBER and has the form of [200,201]. Group ID 200, User (member) ID 201. System users have a UID below 10 (by default). UIC codes can be both numeric as in these examples as well as alphanumeric ([WELDING,JACK]).
+Chapter 4, User Identification Code (UIC), states:
+UICs Are Not Necessarily Unique It is important to note that a UIC does not necessarily identify one particular user. It is possible for the system manager to assign the same UIC to two or more user accounts. It is also possible to reuse a UIC previously assigned to a user account that has been deleted.
+File protection (not ACL's) relies on User Identification Codes, thus a system manager can choose to create a user with the same UIC as another user. (Not the same username though). This way one account that is not a privileged account can access the files of another user without special permissions, since for the system it is the same UIC. 
+You might use this when someone is away for a longer period, or when a user is replaced by someone else. In Linux systems, the UID is recommended to be unique, but it is not required. In my experience however it gives more problems than solutions and using groups, SElinux or ACL's will fix your problem better.
+I cover this because as far as I know now, in OpenVMS, the file protection bits are exclusively looking at the UIC. I'm not sure how that is on a linux system.
+Earlier in the article we created a new user with the UIC [200,201]. Let's create an example file and make that not accessible for other users:
+$ CREATE EXAMP.TXT
+this is a test
+ CTRL+Z
+Check the default permissions:
+$ DIR /SECURITY
+
+Directory DKA0:[USERS.REMY]
+
+EXAMP.TXT;1          [REMY]                           (RWED,RWED,RE,)
+
+Total of 1 file.
+This means that:
+System: read, write, execute, delete
+Owner: read, write, execute, delete
+Group: read, execute
+World: none
+Change it so that the group to which the user belongs (201) also cannot access the file:
+$ SET FILE/PROTECTION=(S:RWED,O:RWED,G,W) EXAMP.TXT;1
+Now create another user with a different UIC to test the rights. Make sure it has no system permissions otherwise it will still be able to access the file.
+ $ SET DEFAULT SYS$SYSTEM
+ $ RUN AUTHORIZE
+ ADD REMY2 /PASSWORD=TEMP /OWNER="Remy2" /DEV=DKA0 /DIR=[USERS.REMY2] /UIC=[300,401] /FLAG=NODISUSER 
+ CTRL+Z ! to exit UAF>
+
+$ CREATE /DIRECTORY DKA0:[USERS.REMY2]
+$ SET DIRECTORY /OWNER=REMY2 DKA0:[USERS.REMY2]
+Login as that user (REMY2) and check if you can access that file. It should fail:
+$ TYPE DKA0:[USERS.REMY]EXAMP.TXT;1
+%TYPE-W-OPENIN, error opening DKA0:[USERS.REMY]EXAMP.TXT;1 as input
+-RMS-E-PRV, insufficient privilege or file protection violation
+Cool. Now, as the system user, run AUTHORIZE and change the UIC code of this second user. Note, don't do this on a live system since it can have unwanted side-effects (namely permission errors for all your users files).
+UAF> MODIFY REMY2 /UIC=[200,201]
+
+%UAF-E-RDBMDFYERR, unable to modify identifier REMY2
+-SYSTEM-F-DUPIDENT, duplicate identifier
+%UAF-I-MDFYMSG, user record(s) updated
+Disregard the error, check with SHOW REMY2 to see the actual change:
+UAF> SHOW REMY2
+
+Username: REMY2                            Owner:  Remy2
+Account:                                   UIC:    [200,201] ([REMY])
+CLI:      DCL                              Tables: DCLTABLES
+Default:  DKA0:[USERS.REMY2]
+LGICMD:
+Flags:
+Log back in as that user (REMY2). The file of the different user with the same UIC (REMY) should be readable now:
+$ TYPE DKA0:[USERS.REMY]EXAMP.TXT;1
+this is a test
+As well as the home folder of the user:
+$ DIR DKA0:[USERS.REMY]
+
+Directory DKA0:[USERS.REMY]
+
+EXAMP.TXT;1
+
+Total of 1 file.
+However, as stated above, you won't be able to view your own files and folders anymore, since your UIC changed:
+$ SHOW DEF
+  DKA0:[USERS.REMY2]
+$ DIR
+%DIRECT-E-OPENIN, error opening DKA0:[USERS.REMY2]*.*;* as input
+-RMS-E-PRV, insufficient privilege or file protection violation
+System password
+The last of the interesting bits I want to discuss is the system password.
+Chapter 5, logging in and out of the system, the login sequence states:
+Some OpenVMS systems have a system password enabled. This is a rarely used, extra security feature. Such systems require you to type a password, which will not be displayed, even before presenting you with a Username: prompt. You will have no indication that anything at all is happening until the system password is accepted. 
+From the documentation:
+The System password controls access to particular terminals and is required at the discretion of the security administrator. System passwords are usually necessary to control access to terminals that might be targets for unauthorized use, such as dialup and public terminal lines. 
+To setup the system password, set the password and then choose the terminals where you want to require the system password.
+Start up AUTHORIZE:
+ $ SET DEFAULT SYS$SYSTEM
+ $ RUN AUTHORIZE
+Set the password:
+UAF> MODIFY/SYSTEM_PASSWORD=example
+%UAF-I-SYSPWDMOD, system password modified
+Then on a terminal where you want to require the system password, execute this command:
+$ SET TERMINAL/SYSPWD/PERMANENT
+You can use the SHOW TERM command to check if the password is active. Look for Syspassword.
+$ SHOW TERM
+Terminal: _TTA0:      Device_Type: Unknown       Owner: _TTA0:
+                                              Username: SYSTEM
+
+   Input:    9600     LFfill:  0      Width:  80      Parity: None
+   Output:   9600     CRfill:  0      Page:   24
+
+Terminal Characteristics:
+   Interactive        Echo               Type_ahead         No Escape
+   No Hostsync        TTsync             Lowercase          No Tab
+   Wrap               Scope              No Remote          No Eightbit
+   Broadcast          No Readsync        No Form            Fulldup
+   No Modem           No Local_echo      Autobaud           No Hangup
+   No Brdcstmbx       No DMA             No Altypeahd       Set_speed
+   No Commsync        Line Editing       Overstrike editing No Fallback
+   No Dialup          No Secure server   No Disconnect      No Pasthru
+   Syspassword        No SIXEL Graphics  No Soft Characters No Printer Port
+   Numeric Keypad     No ANSI_CRT        No Regis           No Block_mode
+   No Advanced_video  No Edit_mode       No DEC_CRT         No DEC_CRT2
+   No DEC_CRT3        No DEC_CRT4        No DEC_CRT5        No Ansi_Color
+   VMS Style Input    <CTRL-H> Backspace
+The documentation states that you can require this for remote logins, but I have trouble getting the networking part working, due to issues with Windows 10. No way for me to test that yet. 
+This is a GIF I recorded with the Windows On Screen Keyboard to show that the system password is required before being able to do anything:
+
+
+
+RMS-E-FLK, file currently locked by another user
+I found out how to remove files and folders and wrote an article on that. To remove all versions of a file, using big scary wildcards:
+$ DELETE vmsports*.*;*
+%DELETE-W-FILNOTDEL, error deleting DSA3:[DECUSERVE_USER.EXAMPLE]VMSPORTS-AXPVMS-83-CURL-V0747--1.ZIP;1
+-RMS-E-FLK, file currently locked by another user
+Huh? I was not aware of multiple users or sessions in this account.
+That error message refers to the RMS. I saw that here as well, I might need to look into it some more. 
+I remembered something about locking when reading HELP pages earlier. In this case, I tried the following:
+$ SET FILE /UNLOCK VMSPORTS*.*;*
+%SET-I-NOTLOCKED, DSA3:[DECUSERVE_USER.EXAMPLE]VMSPORTS-AXPVMS-83-CURL-V0747--1.ZIP;1 notlocked
+That didn't help. Lets read the HELP:
+$ HELP SET FILE /UNLOCK
+
+SET
+
+  FILE
+
+    /UNLOCK
+
+       Clears a file marked as deaccess locked. Deaccess locking is
+       required by and used by those few applications that maintain
+       their own locking and consistency, typically without the use
+       of the OpenVMS distributed lock manager, and potentially also
+       without the use of RMS. When an application using deaccess
+       locking does not correctly deaccess the file (often due to an
+       application or system failure), the file is marked as locked, and
+       is thus inaccessible until the integrity of the contents of the
+       file are verified and the SET FILE/UNLOCK command is used.
+
+       This command does not affect the state of files that are locked
+       using RMS or the distributed lock manager.
+
+       For details on file deaccess locking, see the VSI OpenVMS I/O
+       User's Reference Manual, the ACP-QIO interface documentation, and
+       specifically the FIB$V_DLOCK option available on the IO$_CREATE
+       and IO$_ACCESS functions.
+
+       The SET FILE/UNLOCK command can clear the cause of the following
+       error message:
+
+       %SYSTEM-W-FILELOCKED, file is deaccess locked
+
+       However, this command cannot resolve the cause of the error
+       message:
+
+       %RMS-W-FLK, file currently locked by another user
+That explains why it did not work. I suspected that there might be a process which locked my file. 
+Tracing a process' open files (lsof)
+The HPe forums where of help here. First I needed the root disk name, which is in the DIR output:
+$ DIR
+
+Directory DSA3:[DECUSERVE_USER.EXAMPLE]
+
+$MAIN.TPU$JOURNAL;1 .VIMINFO;1          A.;1                FTP_SERVER.LOG;3
+FTP_SERVER.LOG;1    LOGIN.COM;2         LOGIN.COM;1         LOGIN_COM.TPU$JOURNAL;1
+MAIL.DIR;1          NOTES$NOTEBOOK.NOTE;1                   SSH.DIR;1
+SSH2.DIR;1          THREE.DIR;1         VMSPORTS-AXPVMS-83-CURL-V0747--1.ZIP;1
+WWW.DIR;1
+Using the SHOW DEV command we can list all processes that have files open:
+$ SHOW DEV /FILES DSA3:
+Files accessed on device DSA3: on  6-MAY-2018 10:31:44.88
+Process name      PID     File name
+                00000000  insufficient privilege or object protection violation
+                00000000  insufficient privilege or object protection violation
+Rob Brooks      0000043B  insufficient privilege or object protection violation
+HENKLE          0000F62B  insufficient privilege or object protection violation
+HENKLE          0000F62B  insufficient privilege or object protection violation
+HENKLE          0000F62B  insufficient privilege or object protection violation
+HENKLE          0000F62B  insufficient privilege or object protection violation
+[...]
+HtHTNOTES_AN165 0000E541  insufficient privilege or object protection violation
+<FTP_EXAMPLE>      00011591  [DECUSERVE_USER.EXAMPLE]FTP_SERVER.LOG;3
+<FTP_EXAMPLE>      00011591  [DECUSERVE_USER.EXAMPLE]VMSPORTS-AXPVMS-83-CURL-V0747--1.ZIP;1
+Except for the huge list of errors, it confirms that the FTP server has locked my file. One of the ways to release that lock is to stop the process. Another way is to reboot the system. The latter being a harsh solution if all else fails.
+Search the output of one command for a string (pipe and grep) on OpenVMS
+A big list of open files is not really usefull, and I don't want to see all those other users, none of my business. I wanted to filter that list to only show my user. Let's see if I can use a pipe and grep:
+$ SHOW DEV /FILES DSA3: | GREP EXAMPLE
+%DCL-W-MAXPARM, too many parameters - reenter command with fewer parameters
+ \|\
+Nope, but I do suspect OpenVMS having an excellent solution for this problem. The DCL shell is over 30 years old so someone had to have this problem.
+Browsing around the documentation I found this. It seems that if you want to pipe output of a command, you first need to preface the command with the word PIPE, then the command, then the | (pipe char), then another process. 
+There is no grep on OpenVMS unless you install it. There however is SEARCH. A logical name, just like most of OpenVMS' workings.
+The search command requires a filename. You can't just pipe output into it directly, you need to tell it that it has to search the output. OpenVMS has the SYS$OUTPUT and SYS$INPUT files for that when using the PIPE command. 
+Reading through the documentation:
+|: Key pipe separator. The pipe connects the SYS$OUTPUT of one pipeline-segment command to the SYS$INPUT of the next command. 
+A few tries later I conjured up this command sequence:
+$ PIPE SHOW DEV /FILES DSA3: | SEARCH SYS$INPUT EXAMPLE
+Files accessed on device DSA3: on  6-MAY-2018 12:48:11.51
+Process name      PID     File name
+[...]
+<FTP_EXAMPLE>      000111AF  [DECUSERVE_USER.EXAMPLE]FTP_SERVER.LOG;4
+To show all running processes including their PID's, use the SHOW SYSTEM command. Combine that with out PIPE&SEARCH shell trick to get all the processes of the current user. Searching the docs didn't gave me another way or flag to the SHOW SYSTEM or SHOW PROCESS command to filter out one specific user.
+$ PIPE SHOW SYSTEM | SEARCH SYS$INPUT EXAMPLE
+OpenVMS V8.4-2L2  on node EISNER    6-MAY-2018 12:49:45.02   Uptime  23 18:27:17
+  Pid    Process Name    State  Pri      I/O       CPU       Page flts  Pages
+[...]
+0001156B EXAMPLE            LEF      9      374   0 00:00:00.15       641     89
+000111AF <FTP_EXAMPLE>      LEF      5    46299   0 00:00:06.01       705    346  N
+000115B0 EXAMPLE_62273      LEF      6      129   0 00:00:00.01        84    105  S
+000115BE EXAMPLE_27501      CUR   0  4      188   0 00:00:00.04       138    165  S
+000115BF EXAMPLE_29010      COM      4      185   0 00:00:00.02       128    152  S
+It seems that we can try to stop (kill) process 000111AF. Use the STOP command with the /ID flag:
+$ STOP /ID=000111AF
+Now the file deletion was possible:
+$ DEL VMSPO*.*;*
+$
+The actual cause of the upload failure? I don't have enough quota.
+SHOW QUOTA
+The sFTP client showed me this error after failing a few times:
+550 File Write Error: %%SYSTEM-F-EXDISKQUOTA, disk quota exceeded
+This is where my adventure ends. Without looking up documentation, because of the logicalness of DCL, the following command showed me that I had exhausted my disk quota:
+$ show quota
+  User [EXAMPLE] has 10000 blocks used, 0 available,
+  of 10000 authorized and permitted overdraft of 0 blocks on DISK_USER
+What is a disk block you ask? Again the documentation has all the answers:
+A disk block is the minimum unit of disk storage allocation in OpenVMS.
+Under OpenVMS VAX and OpenVMS Alpha, the disk volume block size is consistent, with each block containing 512 bytes, or one-half kilobyte. Each byte is comprised of eight bits. A bit represents the smallest unit of information, typically refered to as a one or a zero.
+[...]
+The number of bytes in a file can be determined by multiplying the number of blocks allocated for the file times the number of bytes in a block. For example: to convert OpenVMS disk blocks to (base two) kilobytes (KB; 1024 bytes), simply divide by two. To convert blocks to (base two) megabytes, divide by 2048. Blocks to (base two) gigabytes (GB), divide by 2097152. 
+In the case of the DECUS system, I have about 5 megabytes of quota and my zipped curl was around 7 MB, explaining the quota error. 
+
+Tags: alpha  blog  dec  decus  es40  itanium  openvms  pdp  simh  vax  vms  
+
+DCL (shell)
+OpenVMS uses the DCL shell, short for Digital Command Language. It appears that DCL is an attempt to have one shell for all systems of DEC, so that one only has to learn one shell environment usable on many systems.
+I use SSH to connect to the DECUServe system and doing that from a linux computer I had no problem with backspace. As in, the backspace key removes the character left of the cursor.
+From a windows system with Putty for SSH, I noticed that the Backspace key moves the cursor to the beginning of the line. The terminal is set on insert mode, so I had to retype the entire line when making a typo. The delete key was also of no help, it didn't seems to do anything.
+Since I often work with network devices such as switched, I resorted to the famous CTRL+H key combo. That also moved the cursor to the start of the line. I was hoping it would remove a character.
+Terminal input features
+The first clue came when I read this documentation on shell features such as go to the end or beginning of a line. Like CTRL+A and CTRL+E in bash emacs mode (default).
+To correct a typo when the shell is in BACKSPACE to the start of the line mode, I used the CTRL+J key combo. That deletes an entire word. So I pressed backspace, ended up at the start of the line and either using the arrow keys or CTRL+E (go to the end of the line) I went back to the typo and pressed CTRL+J to remove the word and redo the typo.
+I also found out that the DCL by default is in overwrite (insert) mode. Thas means that when you move the cursor to a place in a word and start typing, the character underneath the cursor is overwritten. The alternative (append mode) means that the characters are placed before the character under the cursor and nothing is overwritten.
+To switch these modes in the DCL shell, use CTRL+A. I was unable to find a visual indicator to show which mode you are in. This combo also works in the EVE editor by the way.
+Not an optimal situation to be in regarding typing. It is quite cumbersome when you are used to certain backspace key behaviour.
+SET TERMINAL
+Reading more documentation on terminal options I found the specific option I was looking for:
+/BACKSPACE=keyword
+Controls how the system responds to the backspace key (Ctrl/H) in line editing mode. There are two possible keywords:
+
+    BACKSPACE (default) --- The terminal driver returns the user to the beginning of the line. (This is the traditional way OpenVMS has always worked.)
+    DELETE --- The terminal driver interprets the backspace key as a delete character instruction.
+    Note the following exceptions:
+        If the terminal is set in PASSALL or PASTHRU mode, the backspace key is not interpreted as a delete character instruction.
+        If the user issues an IO$_READVBLK with IO$M_NOFILTR or IO$_READPBLK, the backspace key is not interpreted as a delete character instruction. 
+
+You can use SYSGEN to make /BACKSPACE=DELETE the default for all terminals by setting the system parameter TTY_DEFCHAR3 to 16.
+
+If the default is set to DELETE, the user can still go to the start of a line by pressing F12 or by entering the following sequence: Ctrl/V Ctrl/H Ctrl/H. 
+So using the following command one can make their backspace key remove a character left of the cursor:
+ $ SET TERMINAL /BACKSPACE=DELETE
+After which to my pleasure, the backspace key works as I want it to work. Even in EVE, the editor.
+Make it last
+I want this to be my default and on linux I'm used to placing stuff in the .bashrc or .profile to be executed at every shell login. OpenVMS has such a thing, namely LOGIN.COM in your home folder.
+On the DECUS system there already was stuff in there, so I only added my line on the most logical place. This is the specific line:
+$ SET TERMINAL /BACKSPACE=DELETE     
+Using the EVE editor:
+EVE LOGIN.COM
+This is the complete file with my changes:
+$! Template login.com procedure for DECUServe users.
+$ set noon
+$ ! Remove the following line if you want to use DECWindows Notes
+$       NO*TES :== NOTES/INTERFACE=CHARACTER_CELL
+$ if f$mode() .nes. "INTERACTIVE" then goto end_interactive
+$ ! Place commands to be executed only in interactive mode here:
+$ set terminal/inquire/noeightbit
+$ update_notebook  ! Spawned update of the MAIN class in your Notebook.
+$end_interactive:
+$ ! Place commands to be executed in all modes here:
+$ show quota
+$ SET TERMINAL /BACKSPACE=DELETE
+$ exit
+Saving it with CTRL+Z, then logging out (with LOG) and logging back in, my backspace key now always is just the way I like it.
