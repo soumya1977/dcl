@@ -1,0 +1,400 @@
+$!	CALLOUT_CHECK.COM
+$!
+$!	This COM checks the free space available on PRPDISK1, PRPDISK4 and
+$!	PRPDISK5 and then produces a list of scheduler jobs that are on hold.
+$!
+$INITIALISATION:
+$  set on
+$  set verify
+$  set nocontrol = y
+$!
+$  vcs_msg_no   := "01"
+$  vcs_msg      := "ABNORMAL_END_CALL_ESPS_SUPPORT"
+$  vcs_start    := "00-PROCESS_STARTED"
+$  vcs_ok       := "00-PROCESS_SUCCESSFULLY_ENDED"
+$  job_name     := "CALLOUT_CHECK"
+$  account_name = f$getjpi("","account")
+$!
+$  delete       := delete
+$  purge        := purge
+$  define       := define
+$  write        := write
+$  run          := run
+$!
+$  on error then goto RUNERROR  
+$  error_status = %x1
+$!
+$START:
+$!
+$  request "%''account_name'_''job_name'_''vcs_start'"
+$!
+$MAIN:
+$!
+$! Copy yesterday's file to backup and create blank file for today
+$!
+$  assign/log PRPDISK3:[USERS.PRCOPR.CALLOUT] CALLOUT
+$!
+$  if f$search ("CALLOUT:callout_check.txt") .nes. ""
+$  then 
+$      rename/log CALLOUT:callout_check.txt CALLOUT:callout_check.bck
+$      purge/log/keep=30 CALLOUT:callout_check.bck
+$  endif
+$!
+$  create/log CALLOUT:callout_check.txt
+$!
+$! Check disk space and scheduler
+$!
+$  sh dev prpdisk1/out=CALLOUT:prpdisk1.txt
+$!
+$  sh dev prpdisk4/out=CALLOUT:prpdisk4.txt
+$!
+$  sh dev prpdisk5/out=CALLOUT:prpdisk5.txt
+$!
+$  sched sho job/user=prpsch/status=hold/br/out=CALLOUT:held_jobs.txt
+$!
+$  append/log -
+	CALLOUT:prpdisk1.txt, CALLOUT:prpdisk4.txt, -
+	CALLOUT:prpdisk5.txt, CALLOUT:held_jobs.txt -
+	CALLOUT:callout_check.txt
+$!
+$CLEANUP:
+$!
+$  delete/log CALLOUT:prpdisk*.txt;*
+$  delete/log CALLOUT:held_jobs.txt;*
+$!
+$EXIT:
+$!
+$  request "%''account_name'_''job_name'_''vcs_ok'"
+$  exit error_status
+$!
+$RUNERROR:
+$!
+$  vcs_msg_no   := "02"
+$  error_status := '$status
+$  request "%''account_name'_''prog_name'_''vcs_msg_no'_''vcs_msg'"
+$!
+$  @oppsmg_system:psmgdcmwrite -
+   'job_name' -
+   "JOB_71''prog_name'_''vcs_msg'"
+$!
+$  exit error_status
+$!
+$!***********************************************************************
+$! Command File and Utility Name: CALLOUT_CHECK.COM
+$!
+$! Purpose:            Checks free space on PRPDISK1,4 & 5 and which
+$!		       scheduler jobs are on hold and creates a single
+$!		       report showing this information
+$!                     
+$! Method:             - DEC Scheduler daily at 15:30 CET
+$!
+$! Requirements:       -none-
+$!
+$! External Command Procedure:  -none-
+$!
+$! External programs:
+$!
+$! Inputs
+$!
+$!   Files:            -none-
+$!
+$!   Parameters
+$!
+$!     Required:       -none-
+$!
+$!     Optional:       -none-
+$!
+$!   Symbols:          -none-
+$!
+$!   Logicals:         -none-
+$!
+$!   Others:           -none-
+$!
+$! Output
+$!
+$!   Files:            -none-
+$!
+$!   Symbols:          -none-
+$!
+$!   Logicals:         -none-
+$!
+$!   Others:           -none-
+$!
+$! Revision History:
+$!
+$! Date         Who  CSR   Modification
+$!
+$! 05-NOV-1999  KW         Initial version
+$!
+$!***********************************************************************
+
+
+1$ type USER$DISK:[CORCORAN]LOGIN.COM;1
+$ IF F$MODE() .NES. "INTERACTIVE" THEN $EXIT
+$
+$ IF P1 .EQS. "SYM" THEN GOTO LABEL$_SYMBOL
+$ !Above IF is solely for ease of use in picking up new symbol
+$ !definitions after I change my LOGIN.COM without having to
+$ !log back in again, and without re-executing code that is
+$ !not symbol-related and which might cause an issue.
+$
+$ !MC 23.12.15A - REPLY command added below, to ensure that any
+$ !errors detected by the ILVS watchdog process (H$WATCHDOG) get
+$ !reported to my terminal by the OPCOM process.
+$ REPLY /ENABLE=OPER7
+$
+$
+$ @USER$DISK:[CORCORAN.UTILS]LOGINOUTHIS "IN"
+$
+$ IF F$TYPE(EDIT) .NES. ""
+$ THEN
+$       !I don't like using TPU by default, so delete the symbol
+$       !created by SYS$SYLOGIN or its minions...
+$
+$       DELETE /SYMBOL /GLOBAL EDIT
+$ ENDIF
+$
+$
+$ IF F$TYPE(DIFF) .NES. ""
+$ THEN
+$       !I don't like the DIFF symbol definition set up by
+$       !SYS$SYLOGIN or its miniions, I prefer just having the
+$       !default plain-vanilla DIFF by default, unless *I*
+$       !choose otherwise...
+$
+$       DELETE /SYMBOL /GLOBAL DIFF
+$ ENDIF
+$
+$
+$ !Now delete the pesky log files created by FAL access from the
+$ !other node (e.g. DIR THISNODE::dev:[dir]file.typ) or by inbound
+$ !FTP connections:
+$
+$ IF F$SEARCH("SYS$LOGIN:NETSERVER.LOG") .NES. ""
+$ THEN
+$       SET MESSAGE /NOFACILITY /NOSEVERITY /NOID /NOTEXT
+$       ON ERROR THEN CONTINUE
+$       DELETE /NOLOG /NOCONFIRM SYS$LOGIN:NETSERVER.LOG;*
+$       SET MESSAGE /FACILITY /SEVERITY /ID /TEXT
+$ ENDIF
+$
+$
+$ IF F$SEARCH("SYS$LOGIN:UCX$FTPSERVER.LOG") .NES. ""
+$ THEN
+$       SET MESSAGE /NOFACILITY /NOSEVERITY /NOID /NOTEXT
+$       ON ERROR THEN CONTINUE
+$       DELETE /NOLOG /NOCONFIRM SYS$LOGIN:UCX$FTPSERVER.LOG;*
+$       SET MESSAGE /FACILITY /SEVERITY /ID /TEXT
+$ ENDIF
+$
+$
+$
+$ !I personally find that I'm more likely to reuse a command line
+$ !and overtype an existing command, than need to insert some new
+$ !characters into it (i.e. typed it correctly in the first place
+$ !and simply need to use a different parameter value), so disable
+$ !insert mode...
+$ SET TERMINAL /NOINSERT
+$
+$
+$ LABEL$_SYMBOL :
+$ !**********************************
+$ !STEP #1 - logical name definitions
+$ !**********************************
+$ !Define the SYSUAF logical in the process logical name table,
+$ !so that we can use MC AUTHORIZE from anywhere, and avoid
+$ !having to SET DEF to SYS$SYSTEM before using MC AUTHORIZE...
+$ DEFINE /PROCESS /NOLOG SYSUAF SYS$SYSTEM:SYSUAF.DAT
+$
+$
+$ !Define other logicals that are useful for looking around the
+$ !source code...
+$ DEFINE /PROCESS /NOLOG COMMSRC PVS_SOURCE:[PVSCOMM]
+$ DEFINE /PROCESS /NOLOG TASKSRC PVS_SOURCE:[PVSTASK]
+$ DEFINE /PROCESS /NOLOG TRIPSRC PVS_COMMON:[TRIPOS]
+$
+$
+$
+$
+$ !*****************************************************
+$ !STEP #2 - define symbols for "standard" OpenVMS stuff
+$ !*****************************************************
+$ CD    :== @USER$DISK:[CORCORAN.UTILS]CD.COM
+$ CLEAR :== "x[2J"
+$ CLEAR[0,8] == 27
+$ CLS   :== WRITE SYS$OUTPUT CLEAR
+$ DEL   :== DELETE /LOG /CONFIRM
+$ DIR   :== DIRECTORY /SIZE=ALL /DATE=MOD
+$ DPA*G :== DIRECTORY /SIZE=ALL /DATE=MOD /PAGE
+$ EDR   :== EDIT /EDT /READ
+$ EDT   :== EDIT /EDT
+$ FILES :== SHOW DEVICE /FILES
+$ HIS*LOG :== @USER$DISK:[CORCORAN.UTILS]LOGHIS
+$ HOME  :== @USER$DISK:[CORCORAN.UTILS]CD.COM SYS$LOGIN
+$ !Below, check all mounted disks for files with a high version number
+$ HFVNC :== @USER$DISK:[CORCORAN.UTILS]HFVN_CHECKER.COM
+$ VER*CHECK :== @USER$DISK:[CORCORAN.UTILS]HFVN_CHECKER.COM
+$ ILINK :== @USER$DISK:[CORCORAN.UTILS]ILINK.COM
+$ LO*GOUT :== @USER$DISK:[CORCORAN.UTILS]LOGINOUTHIS "OUT"
+$ OCL   :== DEFINE /USER SYS$OUTPUT A.A !OCL=One-Command Log
+$ MONCAC*HE :== MONITOR FILE_SYSTEM_CACHE /INTERVAL=1
+$ MOND*ISK :== MONITOR DISK /INTERVAL=1
+$ MONS  :== MONITOR SYSTEM /INTERVAL=1
+$ NSLOOK*UP :== $SYS$SYSTEM:UCX$NSLOOKUP.EXE
+$ PAG*E :== TYPE /PAGE
+$ PI    :== @USER$DISK:[CORCORAN.UTILS]GET_PROCESS_INFO.COM
+$ PING  :== $SYS$SYSTEM:UCX$PING.EXE
+$ PUR   :== PURGE /LOG /CONFIRM
+$! REMOTE:== @SYS$LOGIN:REMOTE.COM
+$ SD    :== SET DEFAULT
+$ SHD   :== SHOW DEFAULT
+$ SHDD  :== SHOW DEVICE D
+$ SHJE  :== SHOW QUEUE PVS$BATCH /FULL /ALL /BY_JOB_STATUS=RETAINED
+$ SHL   :== SHOW LOGICAL
+$ SHM   :== SHOW MEMORY
+$ SHP   :== SHOW PROCESS
+$ SHQ   :== SHOW QUEUE PVS$BATCH /FULL /ALL
+$ SHS   :== SHOW SYMBOL
+$ SHT   :== SHOW TIME
+$ SHU   :== SHOW USERS /FULL
+$ SHUD  :== SHOW USERS /FULL $
+$ SS    :== @USER$DISK:[CORCORAN.UTILS]SS.COM
+$ SUSPCHK :== @USER$DISK:[CORCORAN.UTILS]SUSPCHK.COM
+$ TAIL  :== TYPE /TAIL
+$ TOP   :== @USER$DISK:[CORCORAN.UTILS]TOP.COM
+$ TOUCH :== @COMMANDS:TOUCH.COM
+$ TPU   :== EDIT /TPU
+$ TPUREAD :== EDIT /TPU /READ
+$ TRACERT :== $SYS$SYSTEM:UCX$TRACE.EXE
+$ UNZIP :== $USER$DISK:[CORCORAN.UTILS]UNZIP.EXE
+$ UP    :== @USER$DISK:[CORCORAN.UTILS]CD """-"""
+$ UPT*IME :== @USER$DISK:[CORCORAN.UTILS]UPTIME.COM
+$ W80   :== SET TERMINAL /WIDTH=80
+$ W132  :== SET TERMINAL /WIDTH=132
+$ XCOPY :== COPY /LOG
+$ XDEL  :== DELETE /CONFIRM /LOG
+$ XPUR  :== PURGE  /CONFIRM /LOG
+$ XREN  :== RENAME /LOG
+$ ZIP :== $USER$DISK:[CORCORAN.UTILS]ZIP.EXE
+$ ZP_AC*COUNTING :== @USER$DISK:[CORCORAN.UTILS]ZIP_ACCOUNTING.COM
+$ ZP_AU*DIT :== @USER$DISK:[CORCORAN.UTILS]ZIP_AUDIT.COM
+$ ZP_O*PERATOR :== @USER$DISK:[CORCORAN.UTILS]ZIP_OPERATOR.COM
+$
+$
+$
+$
+$ !************************************************
+$ !STEP #3 - define symbols for site-specific stuff
+$ !************************************************
+$ !Symbols for searching through source code
+$ AS*RS :== @USER$DISK:[CORCORAN.UTILS.PVS]ASRS.COM
+$ COMM*SRCH :== @USER$DISK:[CORCORAN.UTILS.PVS]COMMSRCH.COM
+$ HDR*SRCH :== @USER$DISK:[CORCORAN.UTILS.PVS]HDRSRCH.COM
+$ TASK*SRCH :== @USER$DISK:[CORCORAN.UTILS.PVS]TASKSRCH.COM
+$ TRIP*SRCH :== @USER$DISK:[CORCORAN.UTILS.PVS]TRIPSRCH.COM
+$ ILVS_SRCH :== @USER$DISK:[CORCORAN.UTILS.PVS]ILVSSRCH.COM
+$
+$ !Symbols for searching through PVS message files & their configuration
+$ MES1  :== SEARCH PVSHDR:TEXTHDR.TRP
+$ MES2  :== SEARCH MESSAGES:ENGLISH.TRP
+$
+$
+$ !Symbol for searching PVS scheduled events list
+$ EVEN*TS :== SEARCH CONFIG:EVENTS.TRP
+$ !Run my modified version of the PVS BRD-STATUS command, which ensures
+$ !that values are output in strict columns, and that they do not stagger
+$ !across the line, depending on how many characters is in each column/row
+$ !combination's value:
+$ BR*OADSTAT :== MC CLI COMMOBJ:BROADSTAT
+$
+$ !Utility to look in common/known locations for content in extant
+$ !command files present on the PVS nodes but where the command file is
+$ !not known:
+$ COMFIND :== @USER$DISK:[CORCORAN.UTILS.PVS]COMFIND.COM
+$
+$ !Utility to get various bits of potential evidence in case any unusual
+$ !behaviour is observed in PVS, or if a cutover/switchover occurs:
+$ CSI :== @USER$DISK:[CORCORAN.UTILS.PVS]CSI.COM
+$
+$ !Show PVS debug counters
+$ DCOUNT*LIST :== @USER$DISK:[CORCORAN.UTILS.PVS]DCOUNTLIST.COM
+$
+$ !Show PVS duplex state
+$ DU*PLEX :== SHOW LOGICAL DUPLEX_STATE /TABLE=LNM$SYSTEM_TABLE
+$
+$ !Run HEALTHCHECK (SUSPCHK, DCOUNTLIST, SHDD, check DUPLEX_STATE and
+$ !TRIM_STOPPED logicals)
+$ HEA*LTHCHECK :== @USER$DISK:[CORCORAN.UTILS.PVS]HEALTHCHECK.COM
+$
+$ !Run Automatic TLS Failure Check utility
+$ ATFCHECK :== @COMMANDS:ATFCHECK.COM
+$
+$ !Run Sequential VIN Usage report utility
+$ SVINUSAGE :== @COMMANDS:SVINUSAGE.COM
+$
+$ !Symbols to back up PVS/ILVS/VMS config and my directory tree
+$ BAKCFG :== @USER$DISK:[CORCORAN.UTILS]BACKUPCFG.COM
+$ BAKDIR :== @USER$DISK:[CORCORAN.UTILS]BACKUPDIR.COM
+$ BAKDS700 :== @USER$DISK:[CORCORAN.UTILS.PVS]GET_TS_SERVER_AND_PORT_INFO
+$
+$ !ILVS Macro Comparison Tool
+$ IMCT :== @ILVSCOMM:IMCT.COM
+$
+$ !List PVS commands (all if no P1, else those which start with P1)
+$ LIS*TCOM :== MC CLI COMMOBJ:LISTCOM
+$
+$ !Varying degrees of checking PVS->MCIS state 1=basic, 4=detailed
+$ MCIS1 :== DIRECTORY /GRAND /NOSIZE /NODATE MTF_DATA
+$ MCIS2 :== DIRECTORY /SIZE=ALL /DATE=MOD /WIDTH=FILENAME=24 MTF_DATA
+$ MCIS3 :== @USER$DISK:[CORCORAN.UTILS.PVS]MCISCHK.COM
+$ MCIS4:== @USER$DISK:[CORCORAN.UTILS.PVS]MCISCHK.COM FULL
+$ MCISNEWLOG :== @MTF_DISK:MTF.COM MTF_DISK:CONF.DAT CUTOFFLOG
+$ !Other P2 parameters for the MTF_DISK:MTF.COM file are "LOGSTYLE OFF",
+$ !"LOGSTYLE NORMAL", "LOGSTYLE EXTENDED", "KILL" and "START" (the KILL and
+$ !START are used to stop and (re)start the MTF_HANDLER process, respectively)
+$
+$
+$ !Utility to roll main PVS log file
+$ PVSNEWLOG :== MC CLI COMMOBJ:NEWLOG
+$
+$       IF F$TYPE(NEWLOG) .NES. ""
+$       THEN
+$               !Ensure that the symbol set up in SYS$SYLOGIN (or one of its
+$               !cohorts) to close ILVS queue files is not available as a DCL
+$               !command, because one can mistakenly think that if PVS logs
+$               !are all that you normally look at, that you have got a symbol
+$               !called NEWLOG set up to roll the PVS log file.
+$
+$               DELETE /SYMBOL /GLOBAL NEWLOG
+$       ENDIF
+$
+$
+$ !Execute PVS report command for given P1
+$ REP :== MC CLI COMMOBJ:REPORT
+$
+$ !Show amount of TRIPOS memory (preallocated vectors & shared memory)
+$ SMM :== MC CLI COMMOBJ:SMM
+$
+$ !Check for PVS processes that have encountered an exception
+$ SUSP*CHK :== @USER$DISK:[CORCORAN.UTILS]SUSPCHK.COM
+$
+$       !...then allow them to continue & evenutally terminate if still in
+$       !SUSP state
+$       RES*UME :== SET PROCESS /RESUME /ID=
+$
+$ !Utility to list in descending order the # of blocks each user's dir takes up
+$ UDIR*USAGE :== @USER$DISK:[CORCORAN.UTILS.PVS]UDIRUSAGE.COM
+$
+$ !Show EOC information for given P1 VIN
+$ VIN*STATUS :== MC CLI COMMOBJ:VINSTATUS2 CARD FULL REPLY R9
+$
+$ !Show full database record from the PVS VOB (Vehicle Order Bank) for a P1 VIN
+$ VOBR*EC :== MC CLI COMMOBJ:VOBREC
+$
+$ !Show current count of vehicles in each PVS zone
+$ VOBS*TATUS :== MC CLI COMMOBJ:VOBSTATUS
+$
+$ !Give the total count of vehicles in a particular zone without displaying
+$ !the details of each vehicle
+$ ZC*OUNT :== @USER$DISK:[CORCORAN.UTILS.PVS]ZONECOUNT.COM
+1$
