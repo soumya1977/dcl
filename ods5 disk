@@ -1,0 +1,18 @@
+
+$!
+$DeviceName = "SYS$SYSDEVICE"
+$DeviceType = F$GETDVI(DeviceName,"ACPTYPE")
+$IF DeviceType .EQS. "F11V5"
+$THEN
+$    DeviceType = "ODS-5"
+$ELSE IF DeviceType .EQS. "F11V2"
+$         THEN
+$             DeviceType = "ODS-2"
+$         ELSE
+$             DeviceType is "unknown"
+$ENDIF
+$ENDIF
+$WRITE SYS$OUTPUT -
+$    "Disk ''DeviceName' on-disk structure is ''DeviceType'"
+$!
+$EXIT
