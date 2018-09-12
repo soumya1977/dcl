@@ -1,0 +1,55 @@
+$! Command procedure pararameter:
+$! P1 the remote IP node name or address in Internet notations.
+$! P2 the remote USERNAME. If casing is to be preserved, pass the username
+$! betweeen double-quotes.
+$! P3 the remote PASSWORD. If casing is to be preserved, pass the password
+$! betweeen double-quotes.
+$! P4 the local VMS FILENAME. The filename and file extension is extracted
+$! from this string. Therefore, if remote file is to be passed in lowercase
+$! enclose the string between double-quotes.
+$! P5 the transfer opration (i.e. : GET or PUT)
+$! P6 the transfer mode (i.e.: ASCII or IMAGE)
+$! P7 the target directory (optional).
+$!
+$ file = P4
+$ colon = f$locate(":",file)
+$ if colon .ne. f$length(file)
+$ then
+$ file = f$extract(colon+1,f$length(file) - colon, file)
+$ endif
+$ close_bracket = f$locate ("]",file)
+$ if close_bracket .ne. f$length(file)
+$ then
+$ file = f$extract(close_bracket+1,f$length(file) - close_bracket,file)
+$ endif
+$ file = f$extract(0,f$locate(";",file),file)
+$ open/write fred ftp.com
+$ write fred "$ftp ''P1'/username=""''P2'""/password=""''P3'"""
+$ if P7 .nes. ""
+$ then
+$ write fred "cd ''P7'"
+$ endif
+$ write fred "type ''P6'"
+$ if P5 .eqs. "GET"
+$ then
+$ if f$locate("*",file) .eq. f$length (file) -
+.and. f$locate("...",P4) .eq. f$length(P4)
+$ then
+$ write fred "get ""''file'"" ''P4'"
+$ else
+$ write fred "mget ''P4'"
+$ endif
+$ else
+$ if f$locate("*",file) .eq. f$length (file) -
+.and. f$locate("...",P4) .eq. f$length(P4)
+$ then
+$ write fred "put ''P4' ""''file'"""
+$ else
+$ write fred "mput ''P4'"
+$ endif
+$ endif
+$ write fred "bye"
+$ close fred
+$ @ftp
+$ delete ftp.com;*
+$ exit
