@@ -1,0 +1,168 @@
+Changing the OpenVMS Version Number?
+Fool your friends, baffle your enemies, run the OpenVMS version of your choice! Instantly back-port all those useful new OpenVMS features to an ancient OpenVMS version! 
+On OpenVMS Alpha systems: 
+
+$ SET DEFAULT SYS$COMMON:[SYS$LDR] 
+$ RUN SYSVER 
+REPLACE V9.9 
+WRITE 
+$ EXIT 
+How does SYSVER work? SYSVER looks for SYS$BASE_IMAGE.EXE within the default directory, and updates the version string stored within. And yes, obviously, SYS$BASE_IMAGE.EXE resides in the directory SYS$COMMON:[SYS$LDR]. 
+On OpenVMS VAX systems: 
+
+$ set default SYS$COMMON:[SYS$LDR] 
+$ copy SYS.EXE SYS.EXE_IN-CASE-I-FAIL 
+$ patch SYS.EXE 
+define sys$gq_version=800044b8 
+set mode ascii 
+!examine sys$gq_version 
+!examine sys$gq_version+4 
+deposit sys$gq_version   = "V9.9" 
+deposit sys$gq_version+4 = "    " 
+update 
+exit 
+$ Exit 
+
+---------------------------------------------------------------------------------------
+How to determine current disk fragmentation level?
+The HP OpenVMS Disk File Optimizer (DFO) defragmentation package provides a fragmentation monitoring tool, and a DFO product authorization key (PAK) is not required for the fragmentation reporting tool: 
+
+$ DEFRAG SHOW/VOLUME ddcu: 
+The DFU tool available on the OpenVMS Freeware can generate a report on the disk fragmentation: 
+
+DFU> REPORT ddcu: 
+
+----------------------------------------------------------------------
+How can I prevent a serial terminal line from initiating a login?
+In SYSTARTUP_VMS.COM, issue the command: 
+
+$ SET TERMINAL/NOTYPEAHEAD/PERMANENT ddcu: 
+This will prevent any unsolicited terminal input on ddcu:, and this unsolicited input is what triggers JOB_CONTROL to start up LOGINOUT on the terminal. Once LOGINOUT starts up on the serial line, you can see interesting behaviour (eg: audits, process creations, etc) as LOGINOUT tries to "chat" with whatever device is hooked onto the remote end of the serial terminal line. 
+
+-----------------------------------------------------------------------------------
+What can I do to improve BACKUP performance?
+Use the documented commands in the manual for performing incremental BACKUPs. Use the documented incremental procedures. Don't try to use incremental commands in a non-incremental context. 
+Also consider understanding and then using /NOALIAS, which will likely be a bigger win than will anything to do with the incremental BACKUPs, particularly on system disks and any other disks with directory aliases. 
+See the OpenVMS documentation for additional details. 
+Ignoring hardware performance and process quotas, the performance of BACKUP during a disk saveset creation is typically limited by three factors: 
+Default extend size 
+The default behavior can have poor performance, as the extend operation can involve extensive additional processing and I/O operations. Consider changing the default extend value on the volume, or change the extend for the process: 
+
+$ set rms/extend=65000 
+Output IO size 
+The default IO size for writing an RMS sequential file is 32 blocks, an increase from the value of 16 blocks used on earlier versions. Setting this to the maximum of 127 can reduce the number of IOs by almost a factor of 4: 
+
+$ set rms/block=127 
+
+Note that the performance might be better on some controllers if the block count is a multiple of 4 - e.g. 124 
+Synchronous writes to the saveset 
+Starting with OpenVMS V7.3, you can now persuade RMS to turn on write-behind for sequential files opened unshared. (Please see the V7.3 release notes or more recent documentation for details.) Enabling the write-behind operations involves setting the dynamic system parameter RMS_SEQFILE_WBH to 1. This parameter is dynamic, and it can be enabled and disabled without a reboot, and changes in its setting can and will directly effect the running system. In order to get the full benefit from write-behind operations, you also need to increase the RMS local buffer count from the default of 2 to a larger number. Raising the value to 10 is probably a reasonable first estimate for this value. 
+
+$ run sys$system:sysman 
+PARAMETERS USE ACTIVE 
+PARAMETERS SET RMS_SEQFILE_WBH 1 
+PARAMETERS WRITE ACTIVE 
+EXIT 
+$ SET RMS/BUFFER=10/EXTEND=65000/BLOCK=127 
+$ BACKUP source-specification ddcu:[dir]saveset.bck/SAVE 
+----------------------------------------------------------------------------------------------------------
+How do I fix a corrupt BACKUP saveset?
+BACKUP savesets can be corrupted by FTP file transfers and by tools such as zip (particularly when the zip tool has not been asked to save and restore OpenVMS file attributes or when it does not support OpenVMS file attributes; use the zip "-V" option), as well as via other means of corruptions. 
+If you have problems (eg: NOTSAVESET errors) with the BACKUP savesets after unzipping them or after an FTP file transfer, you can try restoring the appropriate saveset attributes using the tool: 
+
+$ BACKUP/LIST saveset.bck/SAVE 
+Listing of save set(s) 
+ 
+%BACKUP-F-NOTSAVESET, saveset.bck/SAVE is not a BACKUP save set 
+$ @SRH:[UTIL]RESET_BACKUP_SAVESET_FILE_ATTRIBUTES.COM saveset.bck 
+$ BACKUP/LIST saveset.bck/SAVE 
+Listing of save set(s) 
+ 
+Save set:          saveset.bck 
+Written by:        username 
+... 
+------------------------------------------------------------------------------------------------------
+How do I write a BACKUP saveset to a remote tape?
+How to do this correctly was described at DECUS long ago. On the OpenVMS host with the tape drive, create the following SAVE-SET.FDL file: 
+
+RECORD 
+        FORMAT                  fixed 
+        SIZE                    8192 
+Then create BACKUP_SERVER.COM: 
+
+$ ! 
+$ ! BACKUP_SERVER.COM - provide remote tape service for BACKUP. 
+$ ! 
+$ set noon 
+$ set rms/network=16 
+$ allocate mka500 tapedev 
+$ mount/nounload/over:id/block=8192/assist tapedev 
+$ convert/fdl=SAVE-SET sys$net tapedev:save-set. 
+$ dismount/unload tapedev 
+$ stop/id=0 
+On the node where you want to do the backup, use the DCL command: 
+
+$ backup - 
+    srcfilespec - 
+    node"user pwd"::"task=backup_server"/block=8192/save 
+---------------------------------------------------------------------------------------------
+Please explain DELETE/ERASE and File Locks?
+DELETE/ERASE holds the file lock and also holds a lock on the parent directory for the duration of the erasure. This locking can obviously cause an access conflict on either the file or on the directory---it might well pay to rename files into a temporary directory location before issuing the DELETE/ERASE, particularly for large files and/or for systems with multiple overwrite erase patterns in use; for any systems where the DELETE/ERASE erasure operation will take a while. 
+5.44 Managing File Versions?
+Some applications will automatically roll file version numbers over, and some will require manual intervention. Some will continue to operate without the ability to update the version, and some will be unable to continue. Some sites will specifically (attempt to) create a file with a version of ;32767 to prevent the creation of additional files, too. 
+To monitor and resolve file versions, you can use commands including: 
+
+$ SET FILE/VERSION_LIMIT=n filename 
+$ SET DIRECTORY/VERSION_LIMIT=n [directory] 
+And you can also monitor file version numbers, and can report problems with ever-increasing file versions to the organization(s) supporting the application(s) generating files with ever-increasing version numbers for details on potential problems, and for any recommendations on resetting the version numbers for the particular product or package. If required, of course. 
+The following pair of DCL commands---though obviously subject to timing windows--- can be used to rename all the versions of a file back down to a contiguous sequence of versions starting at 1: 
+
+$ RENAME file.typ;*   RENAME.TMP; 
+$ RENAME RENAME.TMP;* file.typ; 
+--------------------------------------------------------------------------------------------------------------
+Explain disk (or tape) allocation class settings?
+The allocation class mechanism provides the system manager with a way to configure and resolve served and direct paths to storage devices within a cluster. Any served device that provides multiple paths should be configured using a non-zero allocation class, either at the MSCP (or TMSCP) storage controllers, at the port (for port allocation classes), or at the OpenVMS MSCP (or TMSCP) server. All controllers or servers providing a path to the same device should have the same allocation class (at the port, controller, or server level). 
+Each disk (or tape) unit number used within a non-zero disk (or tape) allocation class must be unique, regardless of the particular device prefix. For the purposes of multi-path device path determination, any disk (or tape) device with the same unit number and the same disk (or tape) allocation class configuration is assumed to be the same device. 
+If you are reconfiguring disk device allocation classes, you will want to avoid the use of allocation class one ($1$) until/unless you have Fibre Channel storage configured. (Fibre Channel storage specifically requires the use of allocation class $1$. eg: $1$DGA0:.) 
+-----------------------------------------------------------------------------------------------------
+Why no shadowing for a Quorum Disk?
+Stated simply, Host-Based Volume Shadowing uses the Distributed Lock Manager (DLM) to coordinate changes to membership of a shadowset (e.g. removing a member). The DLM depends in turn on the Connection Manager enforcing the Quorum Scheme and deciding which node(s) (and quorum disk) are participating in the cluster, and telling the DLM when it needs to do things like a lock database rebuild operation. So you can't introduce a dependency of the Connection Manager on Shadowing to try to pick proper shadowset member(s) to use as the Quorum Disk when Shadowing itself is using the DLM and thus indirectly depending on the Connection Manager to keep the cluster membership straight---it's a circular dependency. 
+So in practice, folks simply depend on controller-based mirroring (or controller-based RAID) to protect the Quorum Disk against disk failures (and dual-redundant controllers to protect against most cases of controller and interconnect failures). Since this disk unit appears to be a single disk up at the VMS level, there's no chance of ambiguity. 
+----------------------------------------------------------------------------------------
+Tell me about SET HOST/DUP and SET HOST/HSC
+RUN SYS$SYSTEM:SYSMAN 
+SYSMAN> IO CONNECT FYA0/NOADAPTER/DRIVER=SYS$FYDRIVER 
+On OpenVMS VAX: 
+
+$ RUN SYS$SYSTEM:SYSGEN 
+SYSGEN> CONNECT FYA0/NOADAPTER 
+Alternatives to the DCL SET HOST/DUP command include the console SET HOST command available on various mid- to recent-vintage VAX consoles: 
+Access to Parameters on an Embedded DSSI controller: 
+
+SET HOST/DUP/DSSI[/BUS:{0:1}] dssi_node_number PARAMS 
+Access to Directory of tools on an Embedded DSSI controller: 
+
+SET HOST/DUP/DSSI[/BUS:{0:1}] dssi_node_number DIRECT 
+Access to Parameters on a KFQSA DSSI controller: 
+
+SHOW UQSSP ! to get port_controller_number PARAMS 
+SET HOST/DUP/UQSSP port_controller_number PARAMS 
+These console commands are available on most MicroVAX and VAXstation 3xxx series systems, and most (all?) VAX 4xxx series systems. For further information, see the system documentation and---on most VAX systems---see the console HELP text. 
+
+----------------------------------------------------------------------
+Details on Volume Shadowing?
+This section contains information on host-based volume shadowing; on the disk mirroring capabilities available within OpenVMS. 
+15.6.8.1 Does volume shadowing require a non-zero allocation classes?
+Yes, use of host-based Volume Shadowing requires that the disk(s) involved be configured in a non-zero allocation class. 
+Edit SYS$SYSTEM:MODPARAMS.DAT to include a declaration of an non-zero allocation class, such as setting the host allocation class to the value 7: 
+
+ALLOCLASS = 7 
+Then AUTOGEN the system, and reboot. 
+You should now be able to form the shadow set via a command such as the following: 
+
+$ MOUNT dsa1007: /SHADOW=($7$dkb300:,$7$dkb500:) volumelabel 
+When operating in an OpenVMS Cluster, this sequence will typically change the disk names from the SCSNODE prefix (scsnode$dkann) to the allocation-class prefix ($7$dkannn). This may provide you with the opportunity to move to a device-independent scheme using logical name constructs such as the DISK$volumelabel logical names in your startup and application environments; an opportunity to weed out physical device references. 
+Allocation class one is used by Fibre Channel devices; it can be best to use another non-zero allocation class even if Fibre Channel is not currently configured and not currently planned. 
+
+
+
