@@ -1,0 +1,382 @@
+1$ type BIS_COMM:ALERT.COM
+$! -------------------------------------
+$! ALERT.COM
+$! Sends a REPLY to all users and terminals
+$! defined in the lists below to inform them
+$! that ASRS retrievals have been stopped (BIS 550)
+$!
+$! 16-APR-2015A Mark Corcoran   Remove LTA8006 from TERM_LIST
+$!
+$! 16-APR-2015B Mark Corcoran   Remove erroneous leading comma from USER_LIST,
+$!                              and remove obsolete user accounts (GHELSBY,
+$!                              MFOSTER5, ASAXBY), and convert USER_LIST into
+$!                              3 separate user lists (REP_DISTLIST1 for ILVS
+$!                              analysts, REP_DISTLIST2 for OPS analysts, and
+$!                              REP_DISTLIST3 for Vehicle Scheduling), as well
+$!                              as having a separate REPLY command for each.
+$!
+$!                              Also ensure that negated form of the /NOTIFY
+$!                              qualifier (i.e. /NONOTIFY) is specified, to
+$!                              avoid the default /NOTIFY behaviour - see code
+$!                              for the reason why.
+$!
+$! 16-APR-2015C Mark Corcoran   Now send an email to a distribution list in
+$!                              addition to the OPCOM REPLY messages, in case
+$!                              users are not logged on, or have their
+$!                              attention directed elsewhere than their PVS
+$!                              user session.
+$!
+$! 04-JAN-2016A Mark Corcoran   Correct the definition of REP_DISTLIST1 to
+$!                              remove $RUNDERWO, and add $SSAMANTA.
+$!
+$! 04-JAN-2016B Mark Corcoran   Correct the definition of REP_DISTLIST2 to
+$!                              remove $PTRAYNOR, and change $GWILKIN8 to
+$!                              $GWILKIN1.
+$!
+$! 04-JAN-2016C Mark Corcoran   Correct the definition of REP_DISTLIST3 to
+$!                              remove DMCDERMO, and add ERIMMER & PPAREJAA.
+$!
+$! 04-JAN-2016D Mark Corcoran   Correct the call to ESUB$_MAIL_DIST_LIST (the
+$!                              P2 parameter to specify a file containing the
+$!                              body of the email was missing).
+$!
+$!                              Whilst it previously should have been NLA0:,
+$!                              we now create a temprorarily file with some
+$!                              meaningful text for the email body, to
+$!                              indicate the reason that a trim has stopped
+$!                              and what can be done to fix it.
+$!
+$! 04-JAN-2016E Mark Corcoran   Following on from problems with Trim B being
+$!                              in a stopped state today, it became difficult
+$!                              to investigate, because each message from PBS
+$!                              for Trim B (once T$SUBBISIO550 had got into a
+$!                              state where it wasn't processing Trim B)
+$!                              resulted in two REPLY messages being output
+$!                              on the terminal approximately ever 3 seconds.
+$!
+$!                              We now implement two delay factors - one for
+$!                              REPLY messages, and one for emails.
+$!
+$!                              We only output reply messages once every 5
+$!                              minutes, and send email messages once every 15
+$!                              minutes.
+$!
+$! 04-JAN-2016F Mark Corcoran   Add back in the call to send a REPLY message to
+$!                              OPA0: (erroneously removed during 16-APR-2015
+$!                              changes) - it's always useful as a final
+$!                              last-gasp means of notification.
+$!
+$! -------------------------------------
+$!
+$ TESTING = 0
+$
+$
+$ REP_DISTLIST1 = F$TRNLNM("MENUE_REP_DISLIST1") !Get list of PVS/ILVS Analysts to ping with REPLY
+$ IF REP_DISTLIST1 .EQS. ""
+$ THEN
+$       !Logical name not defined, so use defaults correct @ 04-JAN-2016
+$       IF TESTING .EQ. 1
+$       THEN
+$               REP_DISTLIST1 = "$MCORCOR1"
+$       ELSE
+$               REP_DISTLIST1 = "$MCORCOR1,$MTHAKKAR,$RALLEN17,$RPALMER1,$SSAMANTA,$WELLIOTT" !MC 04.01.16A
+$       ENDIF
+$ ENDIF
+$
+$
+$ REP_DISTLIST2 = F$TRNLNM("MENUE_REP_DISLIST2") !Get list of OPS Analysts to ping with REPLY
+$ IF REP_DISTLIST2 .EQS. ""
+$ THEN
+$       !Logical name not defined, so use defaults correct @ 04-JAN-2016
+$
+$       IF TESTING .EQ. 1
+$       THEN
+$               !Testing is only carried out between PVS and VS analysts
+$               !and does not involve Ops, so don't set up a list of Ops
+$               !users to unnecessarily worry about testing errors.
+$       ELSE
+$               REP_DISTLIST2 = "$CCHAPPE1,$GWILKIN1,$ITAYLOR,$LHITCHM1,$LPHOENIX" !MC 04.01.16B
+$       ENDIF
+$ ENDIF
+$
+$
+$ REP_DISTLIST3 = F$TRNLNM("MENUE_REP_DISLIST3") !Get list of Vechicle Scheduling Analysts to ping with REPLY
+$ IF REP_DISTLIST3 .EQS. ""
+$ THEN
+$       !Logical name not defined, so use defaults correct @ 04-JAN-2016
+$
+$       IF TESTING .EQ. 1
+$       THEN
+$       ELSE
+$               REP_DISTLIST3 = "AWILDMAN,CLAMB1,DMACDO21,ERIMMER,GLATIMER,ISWITHEN,JTHOMP14,PPAREJAA,PSHAW,WKERR" !MC 04.01.16C
+$       ENDIF
+$ ENDIF
+$
+$
+$ IF TESTING .EQ. 1
+$ THEN
+$       TERM_LIST = ""
+$ ELSE
+$       TERM_LIST = "(OPA0:)"
+$ ENDIF
+$!
+$!--------------------------------------
+$!
+$ IF TESTING .EQ. 1
+$ THEN
+$       TRIM = P1
+$ ELSE
+$       TRIM = F$TRNLNM("TRIM_STOPPED")
+$ ENDIF
+$
+$
+$ IF TRIM .EQS. "A"
+$ THEN
+$       ALERT_MSG = "RETRIEVALS ON TRIM ''trim' (NON-KD) STOPPED!!!"
+$ ELSE IF TRIM .EQS."B"
+$ THEN
+$       ALERT_MSG = "RETRIEVALS ON TRIM ''trim' (KD) STOPPED!!!"
+$ ELSE IF TRIM .EQS."AB"
+$ THEN
+$       ALERT_MSG = "RETRIEVALS ON BOTH TRIM LINES (NON-KD and KD) STOPPED!!!"
+$ ELSE
+$       ALERT_MSG = ""
+$ ENDIF
+$ ENDIF
+$ ENDIF
+$
+$
+$ IF ALERT_MSG .NES. ""
+$ THEN
+$       CURTIME = F$TIME()
+$       !Below, convert space-led single-digit DOM to zero-led double-digit
+$       IF F$EXTRACT(0, 1, CURTIME) .EQS. " " THEN CURTIME[0,8] = %X30 !MC 04.01.16E
+$       TEMP = F$CVTIME(CURTIME, "COMPARISON") !MC 04.01.16D
+$
+$       !There is no point in adding code in here to handle a jump from a single
+$       !trim stopped to both trims, because both still require the same solution
+$       !(SYS/STOP T$SUBBISIO550 and SYS/START T$SUBBISIO550 at the ILVS command
+$       !prompt).  This comment block added under audit MC 04.01.16E
+$       LAST_REPLY_DATE_AND_TIME = F$TRNLNM("LAST_ALERT_REPLY_DAT", "LNM$GROUP") !MC 04.01.16E
+$       LAST_EMAIL_DATE_AND_TIME = F$TRNLNM("LAST_ALERT_EMAIL_DAT", "LNM$GROUP") !MC 04.01.16E
+$
+$       IF LAST_REPLY_DATE_AND_TIME .EQS. ""
+$       THEN
+$               !We haven't previously sent a REPLY message to indicate that
+$               !one or more trims have stopped, so we definitely need to
+$               !now...  This entire IF...ELSE added under audit MC 04.01.16E
+$
+$               REPLY_REQD = 1
+$       ELSE
+$               !We have previously sent a REPLY message, but is it longer ago
+$               !than our threshold time to avoid annoying those kind folks
+$               !who are trying to fix the problem?
+$
+$               LAST_RDAT_PLUS_WAIT = F$CVTIME("''LAST_REPLY_DATE_AND_TIME'+00:05:00")
+$
+$               IF TEMP .GTS. LAST_RDAT_PLUS_WAIT
+$               THEN
+$                       REPLY_REQD = 1
+$               ELSE
+$                       REPLY_REQD = 0
+$               ENDIF
+$       ENDIF
+$
+$
+$
+$
+$       IF LAST_EMAIL_DATE_AND_TIME .EQS. ""
+$       THEN
+$               !We haven't previously sent an email to indicate that one or
+$               !more trims have stopped, so we definitely need to now...
+$               !This entire IF...ELSE added under audit MC 04.01.16E
+$
+$               EMAIL_REQD = 1
+$       ELSE
+$               !We have previously sent an email message, but is it longer ago
+$               !than our threshold time to avoid annoying those kind folks
+$               !who are trying to fix the problem?
+$
+$               LAST_EDAT_PLUS_WAIT = F$CVTIME("''LAST_EMAIL_DATE_AND_TIME'+00:15:00")
+$
+$               IF TEMP .GTS. LAST_EDAT_PLUS_WAIT
+$               THEN
+$                       EMAIL_REQD = 1
+$               ELSE
+$                       EMAIL_REQD = 0
+$               ENDIF
+$       ENDIF
+$
+$
+$       IF EMAIL_REQD .EQ. 1
+$       THEN
+$               !This entire IF... added under audit MC 04.01.16D
+$               FACNAME = F$PARSE(F$ENVIRONMENT("PROCEDURE"),,,"NAME","SYNTAX_ONLY")
+$               TEMP_FNAME_PREFIX1 = "T:"
+$               TEMP_FNAME_PREFIX2 = F$EXTRACT(0, 4, TEMP) +-
+                        F$EXTRACT(5, 2, TEMP) + F$EXTRACT(8, 2, TEMP) + "_" +-
+                        F$EXTRACT(11, 2, TEMP) + F$EXTRACT(14, 2, TEMP) +-
+                        F$EXTRACT(17, 2, TEMP)
+$               TEMP_FNAME_FULL = TEMP_FNAME_PREFIX1 + TEMP_FNAME_PREFIX2 + ".TMP"
+$
+$
+$               OPEN /ERROR=LABEL$_OPEN_ERR /WRITE FH1 'TEMP_FNAME_FULL'
+$               WFH1 :== WRITE /ERROR=LABEL$_WRITE_ERR FH1
+$
+$               IF F$LENGTH(TRIM) .EQ. 2
+$               THEN
+$                       !BOTH trims are stopped
+$                       WFH1 "The T$SUBBISIO550 process has stopped processing PBS requests for BOTH trims."
+$                       WFH1 ""
+$                       WFH1 "This is because T$SUBBISIO550 has received 3 or more consecutive messages of"
+$                       WFH1 "type 43 (""Retrieval Request NOT okay"") or of type 46 (""Retrieval request"
+$                       WFH1 "cancelled"") for each trim, without receiving an intervening message of type"
+$                       WFH1 "42 (""Retrieval Request okay"")."
+$               ELSE
+$                       !Just a single trim is stopped
+$                       WFH1 "The T$SUBBISIO550 process has stopped processing PBS requests for trim ''TRIM'."
+$                       WFH1 ""
+$                       WFH1 "This is because T$SUBBISIO550 has received 3 or more consecutive messages of"
+$                       WFH1 "type 43 (""Retrieval Request NOT okay"") or of type 46 (""Retrieval request"
+$                       WFH1 "cancelled"") for trim ''TRIM', without receiving an intervening message of type 42"
+$                       WFH1 "(""Retrieval Request okay"")."
+$               ENDIF
+$
+$
+$               WFH1 ""
+$               WFH1 "The BIS station is configured to treat this as a fatal error (because it is"
+$               WFH1 "abnormal for this to occur)."
+$               WFH1 ""
+$               WFH1 ""
+$               WFH1 "When T$SUBBISIO550 stops processing a trim line, there is NO way to tell it"
+$               WFH1 "that issues have been resolved and that it is okay to start processing again."
+$               WFH1 ""
+$               WFH1 "The only means of ""fixing"" it is for the Operations or PVS support teams to"
+$               WFH1 "use the SYS/STOP and SYS/START commands for the T$SUBBISIO550 process, at the"
+$               WFH1 "ILVS command prompt on the master ILVS node."
+$               WFH1 ""
+$               WFH1 ""
+$               WFH1 "***HOWEVER*** the cause of the error MUST be corrected first of all (before"
+$               WFH1 "restarting the T$SUBBISIO550 process), otherwise the T$SUBBISIO550 process will"
+$               WFH1 "simply get into the same state again!"
+$               WFH1 ""
+$               WFH1 "[The relevant versions of BIS_LOG:BIS_550.LOG need to be reviewed, to"
+$               WFH1 "determine which CARIN(s) appeared in the type-43 and/or type-46 messages from"
+$               WFH1 "PBS."
+$               WFH1 ""
+$               WFH1 "The current state of the CARIN(s) then need to be determined (if it/they are"
+$               WFH1 "STILL in zone 50 in ILVS, it/they are susceptible to being attempted to be"
+$               WFH1 "called off AGAIN, meaning the same situation could arise)."
+$               WFH1 ""
+$               WFH1 "    The CARIN(s) *might* be movable to zone 60 (for trim A) or zone 61 (for"
+$               WFH1 "    trim B) using the BIS_OFFICE procedure (typically done by Vehicle"
+$               WFH1 "    Scheduling)."
+$               WFH1 ""
+$               WFH1 "    However, before any BIS_OFFICE procedure is performed, it needs to be"
+$               WFH1 "    determined *why* PBS sent error messages for the CARIN(s) - is there an"
+$               WFH1 "    inconsistency between ILVS, PBS and the physical location of the vehicle"
+$               WFH1 "    body/ies (and if so, why)?"
+$               WFH1 ""
+$               WFH1 "       Are there any other latent discrepancies not yet found, that will"
+$               WFH1 "       cause a problem once T$SUBBISIO550 has been restarted?"
+$               WFH1 ""
+$               WFH1 "       Is one or both of the ILVS and PBS databases corrupt?]"
+$               WFH1 ""
+$               WFH1 ""
+$               WFH1 "Note to the Ops and PVS teams"
+$               WFH1 "============================="
+$               WFH1 "The T$SUBBISIO550 process defined the TRIM_STOPPED logical name in the group"
+$
+$               !Determine the UIC group that we (a subprocess of T$SUBBISIO550) are running under.
+$               UIC1 = F$GETJPI("","UIC")
+$               IF F$LOCATE(",", UIC1) .EQ. F$LENGTH(UIC1)
+$               THEN
+$                       !An entry exists in the Rights Identifier database with
+$                       !a UIC group and member paired against an alphanumeric
+$                       !Identifier name, so the F$GETJPI lexical function has
+$                       !returned the Identifier name - not much use to us when
+$                       !we need the UIC group number in Octal format.
+$                       !
+$                       !Ergo, we need to convert from Rights Identifier name
+$                       !to UIC group and member, then extract the UIC group
+$                       !number.
+$
+$                       UIC1 = F$ELEMENT(0, "]", F$ELEMENT(1, "[", UIC1)) !Strip []
+$                       UIC2 = F$FAO("!%U", F$IDENTIFIER(UIC1, "NAME_TO_NUMBER"))
+$               ELSE
+$                       UIC2 = UIC1 !Set UIC2 to UIC1 as it makes it easier just to reference it
+$               ENDIF
+$
+$
+$               OUR_UIC_GROUP = F$ELEMENT(0, ",", F$ELEMENT(1, "[", UIC2))
+$               WFH1 "logical name table LNM$GROUP_" +-
+                        F$FAO("!''F$INTEGER(6-F$LENGTH(OUR_UIC_GROUP))'*0") +-
+                        OUR_UIC_GROUP + "."
+$               WFH1 ""
+$               WFH1 "It ONLY uses the logical as a means of informing the fact that it is in a"
+$               WFH1 "TRIM STOPPED state."
+$               WFH1 ""
+$               WFH1 "When the T$SUBBISIO550 process starts up, it does not know about any previous"
+$               WFH1 "trim stopped state and treats the trim line to be in a working state until it"
+$               WFH1 "finds otherwise."
+$               WFH1 ""
+$               WFH1 "It therefore deassigns the logical name on start up, so you do NOT need to"
+$               WFH1 "issue the DEASSIGN /GROUP /USER TRIM_STOPPED command between stopping and"
+$               WFH1 "starting the T$SUBBISIO550 process."
+$               CLOSE FH1
+$
+$               @COMMANDS:ESUB$_MAIL_DIST_LIST 0 'TEMP_FNAME_FULL' 'FACNAME' 'FACNAME' "''ALERT_MSG'" 2 !MC 04.01.16D
+$               DEFINE /GROUP LAST_ALERT_EMAIL_DAT "''CURTIME'" !MC 04.01.16E
+$               DELETE /NOLOG /NOCONFIRM 'TEMP_FNAME_FULL';
+$               GOTO LABEL$_SEND_REPLY
+$
+$
+$               LABEL$_OPEN_ERROR :
+$               !We got an error trying to create a temporary file of
+$               !instructions to tell analysts how to fix the TRIM_STOPPED
+$               !issue - best we can do instead, is send an email with no body
+$               !and hope they have got the nous to know what to do...
+$               @COMMANDS:ESUB$_MAIL_DIST_LIST 0 NLA0: 'FACNAME' 'FACNAME' "''ALERT_MSG'" 2 !MC 04.01.16D
+$               DEFINE /GROUP LAST_ALERT_EMAIL_DAT "''CURTIME'" !MC 04.01.16E
+$               GOTO LABEL$_SEND_REPLY
+$
+$
+$               LABEL$_WRITE_ERROR :
+$               !We got an error trying to write a temporary file of
+$               !instructions to tell analysts how to fix the TRIM_STOPPED
+$               !issue - best we can do instead, is send an email with no body
+$               !and hope they have got the nous to know what to do (and close
+$               !and delete the temporary file that we have created so far).
+$               @COMMANDS:ESUB$_MAIL_DIST_LIST 0 NLA0: 'FACNAME' 'FACNAME' "''ALERT_MSG'" 2 !MC 04.01.16D
+$               DEFINE /GROUP LAST_ALERT_EMAIL_DAT "''CURTIME'" !MC 04.01.16E
+$               CLOSE FH1
+$               DELETE /NOLOG /NOCONFIRM 'TEMP_FNAME_FULL';
+$               GOTO LABEL$_SEND_REPLY
+$       ENDIF
+$
+$
+$
+$       LABEL$_SEND_REPLY :
+$       IF REPLY_REQD .EQ. 1
+$       THEN
+$               !Below, we use the negated form of the NOTIFY qualifier to avoid the
+$               !default behaviour of requiring us to be notified about the success
+$               !(or otherwise) of reply messages - we do NOT want our process to be
+$               !hung whilst waiting for a terminal that has been XOFFed using ^S.
+$
+$               IF REP_DISTLIST1 .NES. "" THEN -
+                        REPLY /BELL /URGENT /NONOTIFY /USER=('REP_DISTLIST1') -
+                        "''ALERT_MSG'"
+$               IF REP_DISTLIST2 .NES. "" THEN -
+                        REPLY /BELL /URGENT /NONOTIFY /USER=('REP_DISTLIST2') -
+                        "''ALERT_MSG'"
+$               IF REP_DISTLIST3 .NES. "" THEN -
+                        REPLY /BELL /URGENT /NONOTIFY /USER=('REP_DISTLIST3') -
+                        "''ALERT_MSG'"
+$               IF TERM_LIST .NES. "" THEN - !MC 04.01.16F
+                        REPLY /BELL /URGENT /NONOTIFY /TERM='TERM_LIST' - !MC 04.01.16F
+                        "''ALERT_MSG'" !MC 04.01.16F
+$               DEFINE /GROUP LAST_ALERT_REPLY_DAT "''CURTIME'" !MC 04.01.16E
+$       ENDIF
+$ ENDIF
+$ EXIT
