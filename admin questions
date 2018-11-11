@@ -1,0 +1,101 @@
+Have you ever had to install & configure OpenVMS from scratch? Describe the steps you went through and problems you had to solve, along with how you managed to solve them.
+
+What's the worst disaster you've ever had to deal with in an OpenVMS environment? How did you deal with it? What role did you play in the recovery? Describe what challenges you faced and the actions you took to work through them.
+The worst happens, your system disk has crashed. How do you restore if the system is a VAX, how do you restore if itâ s an Alpha?
+a. VAX: has to mention STANDALONE BACKUP utility and using it to restore an IMAGE backup from tape.
+b. Alpha: has to mention booting from the VMS distribution CD and choosing the option to run DCL commands.
+
+
+ How would you determine whatâ s running on a particular system?
+a. SHOW SYSTEM â lists all processes executing.
+b. MONITOR utility â ability to continuously monitor various aspects of the OS.
+c. SHOW QUEUE/ALL â shows all batch and print jobs executing.
+
+How to know a volume of tape for mounting it? 
+you cannot know a tape volume label before mount it.
+
+You can proceed as follow:
+1) Mount in foreign mode
+$ MOUNT mytape_dev: /FORE
+or else mount ignoring volume
+$ MOUNT mytape_dev: /OVER=ID
+2) Show tape device characteristic
+$ SH DEV mytape_dev:
+You can see voume label.
+If you will read into a variable (i.e. executing a batch) you can di:
+$ MYVAR_LABEL=F$GETDVI("mytape_dev","VOLNAM")
+(Warning: VOLNAM is uppercase!; not colon after mytape_dev)
+If tape is not readable or it's a new formatted tape, label is blank.
+3) Now you can dismount tape without eject
+$ DISM mytape_dev: /NOUNLOAD
+Volume you can read with previous example is VMS label (max 6 characters) not ANSI label.
+
+
+VMS boot problem 
+I have a system that has been running for almost 18 months now. However, it was rebooted recently and is giving the following prompt for date and time after the VMS banner;
+
+PLEASE ENTER DATE AND TIME (DD-MMM-YYYY HH:MM)
+
+I think the internal real-time clock battery needs to be replaced.
+
+
+heck also for the sysgen parameter SETTIME ?
+
+************************************
+SETTIME
+
+SETTIME enables (1) or disables (0) solicitation of the time of
+day each time the system is booted. This parameter should usually
+be off (0), so that the system sets the time of day at boot time
+to the value of the processor time-of-day register. You can reset
+the time after the system is up with the DCL command SET TIME
+(see the OpenVMS DCL Dictionary).
+
+
+
+SYSGEN>
+SYSGEN> SHO SETTIME
+Parameter Name Current Default Min. Max. Unit Dynamic
+-------------- ------- ------- ------- ------- ---- -------
+SETTIME 0 0 0 1 Boolean
+SYSGEN>
+
+
+When I issued command
+analyze accountng.dat/audit/since=16-dec-2003/summary, I got %AUDSRV-W-BADRECORD, invalid data in record 6331,.....
+Is there a way to recify the record ? 
+
+set audit/server=new_log
+
+Once the old file is free
+
+1.) Make another backup copy!
+2.) Totally untested conjecture - 
+From looking at the audit log it seems it 
+contains one event per record.
+So the following procedure might work
+
+*anal/rms/fdl on the audit log ->security.fdl
+*edit/tpu, delete line 6331
+*convert/fdl=security.fdl edited_copy good_audit
+
+
+
+
+While submitting a batch job , I am getting the following error. I increased JTQUOTA, PFQUO for the user but with no success. Ran AUTOGEN too, but that also has not given any relevant warning. Now I do not know what to do...except reboot .. 
+
+%SUBMIT-F-CREJOB, error creating job
+-SYSTEM-F-INSFMEM, insufficient dynamic memory
+
+
+I think you have some problem with queue manager. You could try a brutly way (if you can stop system):
+1) list the queues on system (with all details using SHO QUE /FULL);
+2) stop all queues (STOP/QUEUE/NEXT que>);
+3) stop queue manager (STOP/QUE/MAN/CLUST);
+4) restart new queue manager (START/QUE/MAN/NEW/ON:)
+5) init all queues.
+
+
+I guess Antoniov clue did the trick. On checking my queues on the system , I found that one queue was stopped and was holding 1000's of jobs in it. I have deleted all the jobs in the queue, then deleted the queue, and then recreated the queue. Also stop and restarted the queue manager. 
+
+After doing this my scheduler job is successfully submitting jobs again
