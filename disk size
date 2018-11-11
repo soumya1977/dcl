@@ -1,0 +1,44 @@
+Cluster communication dynamically uses all avaiable 'channels', i.e. LAN interface endpoints between all systems in a cluster.
+$ MC SCACP SHOW CHANNEL will show all available channels from each node to all other nodes in the cluster. As long as at least one channel is available (Open) from each node to ALL other nodes, cluster communication will continue to work.
+
+
+
+
+DIRECTORY /SELECT=SIZE=MIN=50000 SYS$SYSDEVICE:[*...]
+
+   You don't need large files to fill a disk; many small files will do
+the job just as well (if not better).
+
+   I don't know if some existing tool would help with this, but a small
+DCL script might be useful:
+
+ITS $ type dirsiz.com
+$!                                              2018-10-08 SMS.
+$! DIRE /GRAND for all directories in P1
+$! Default: sys$sysdevice:[000000]
+$!
+$ dir0 = p1                                     ! Top dir.
+$ if (dir0 .eqs. "")
+$ then
+$    dir0 = "sys$sysdevice:[000000]"            ! Default P1.
+$ endif
+$!
+$ top:
+$    dir = f$search( dir0+ "*.dir")             ! Next directory.
+$    if (dir .eqs. "") then goto bot            ! Done.
+$    dir1 = f$parse( dir, , , "name")           ! Ignore "[000000]"
+$    if (dir1 .nes. "000000")
+$    then
+$       dirs = dir0- "]"+ "."+ dir1+ "...]"     ! Form subdir spec.
+$       write sys$output "--------"             ! Spacer.
+$       write sys$output dirs                   ! Show subdir spec.
+$       dire /size = allo /grand 'dirs'         ! DIRE command.
+$    endif
+$    goto top                                   ! Loop.
+$ bot:
+$!
+
+
+
+
+
