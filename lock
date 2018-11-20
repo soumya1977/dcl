@@ -1,0 +1,128 @@
+Hi Jean Marc,
+
+Last week analysis of lock conflicts  during the on call support from our side.Please Rectify if my initial investigation during resolution of lock conflicts wrong.
+
+
+Although its is rectified by DBA team
+
+I got a call from sahibu regarding  the lock conflicts,I had checked the Log file  va01101B.Error is like lock conflicts for this database
+message, "Error: SQL/RDB database locked by another user  
+If you receive this error, there are two ways to close and recover the db.
+
+
+1) Try to close the Database:
+$ RMU/CLOSE CADRE$ROOT_DB:[DATABASE.DB_NAMES]TEAMWORK.RDB
+First i had tried to close the database it was not happening;Then I had requested sahibou to restart the job 
+
+2) I had tried to use see which resource blocked 
+
+rmu/show lock/mode=block to display what is the resource locked.
+
+
+rmu/dump/header=param yourdb and verify what is the status of the snapshot mechanism default is
+Snapshot mode is NON-DEFERRED then I can see snapshot is NON-DEFERRED
+
+$ rmu/dump/header=param databse name 
+*------------------------------------------------------------------------------
+* Oracle Rdb V7.1-500 6-FEB-2008 14:45:30.42
+*
+* Dump of Database header
+* Database: DKB100:[000000.AUDIT_DB]AUDIT_DB.RDB;1
+*
+*------------------------------------------------------------------------------
+
+Database Parameters:
+Root filename is "DKB100:[000000.AUDIT_DB]AUDIT_DB.RDB;1"
+Created at 5-FEB-2008 14:36:01.58
+Oracle Rdb structure level is 71.0
+Maximum user count is 50
+Maximum node count is 16
+Database open mode is AUTOMATIC
+Database close mode is AUTOMATIC
+Database will be mapped in process space
+All transaction modes are allowed
+Prestarted transactions are enabled
+Snapshot mode is NON-DEFERRED
+Statistics are enabled
+Operator notification is disabled
+Logical area count is 512
+Storage Areas...
+- Active storage area count is 12
+- Reserved storage area count is 0
+
+
+
+" Snapshot mode is NON-DEFERRED ".
+
+
+3) I tried to  use rmu/sh stat db
+and go to the screen "process Information"->"Stall Messages" and use the "L" command to view the lock information, if any.
+
+
+$ rmu/show lock/mode=block audit_db
+================================================================================
+SHOW LOCKS/MODE=BLOCKING Information
+================================================================================
+
+--------------------------------------------------------------------------------
+Resource: record 84:67:1
+
+ProcessID Process Name Lock ID System ID Requested Granted
+--------- --------------- --------- --------- --------- -------
+Waiting: 202054F6 _TNA282:....... 5E00A732 00010001 EX
+Blocker: 202054F5 _TNA281:....... 550021A6 00010001 PR
+
+
+
+Could you help me to find, how to interpret record by number.
+Resource: record 84:67:1
+
+
+
+84:67:1 is the dbkey of the locked record
+84 is the logical area id
+67 the page number
+1 the line number in the pag
+
+4) $ ANALYZE/SYSTEM 
+Get the index value of the PID of the stalled process:
+SDA> SHOW SUMMARY 
+Select the stalled process by PID:
+SDA> SET PROCESS/INDEX=index_value 
+Verify that you have the right process:
+SDA> SHOW PROCESS 
+Create an output file that you will be able to edit later:
+SDA> SET OUTPUT file_name.ext 
+Display the process information:
+SDA> SHOW PROCESS/INDEX=index_value/LOCKS 
+Close the file containing the process information by redirecting output of subsequent commands to SYS$OUTPUT:
+SDA> SET OUTPUT SYS$OUTPUT 
+Start a subprocess so that you can edit the file that you created with the lock information:
+SDA> SPAWN 
+Search, starting from the bottom of the file, for the text string "Waiting":
+$ EDIT file_name.ext 
+Write down the lock ID for this particular lock and log out of the subprocess.
+$ LO   (get back to SDA) 
+Show information about the particular lock:
+SDA> SHOW RESOURCE/LOCK=lock_id 
+
+This shows what locks are granted, what locks are waiting, and what resource is locked. Write down all LOCK QUEUE information.
+Determine the PID value:
+SDA> SHOW LOCK lock_id 
+Locate a valid process ID value:
+SDA> SHOW PROCESS/INDEX=pid_from_previous_step 
+Exit:
+SDA> EXIT 
+Show which process has caused or is partially responsible for the stall:
+$ SHOW PROCESS/ID=Process_ID_value 
+This process may have to be repeated for any stalled processes.
+
+5)
+$ ANAL/SYS 
+SDA> SHOW LOCK/CONV      ! Show the locks in the conversion Queue 
+
+SDA> LCK LOAD 
+SDA> LCK SHOW ACT        ! Show the most active resource trees 
+
+SDA> EXIT
+
