@@ -1,0 +1,375 @@
+$!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+$!
+$INITIALISATION:
+$!
+$ set nover
+$ SET ON
+$ SET CONTROL=Y
+$ ON ERROR THEN GOTO CLEANUP
+$ ON CONTROL_Y THEN GOTO CLEANUP
+$!
+$START:
+$ READ /PROMPT="Enter user ID (6 chars).. (E to exit) " SYS$COMMAND six
+$ IF six .EQS. "E" THEN GOTO THE_END
+$ WRITE SYS$OUTPUT ""
+$ WRITE SYS$OUTPUT "Please wait..." 
+$ set def prpdisk3:[users.'six.data]
+$ dir/date/siz prpdisk3:[users.'six.data]
+$ WRITE SYS$OUTPUT ""
+$ WRITE SYS$OUTPUT ""
+$ WRITE SYS$OUTPUT ""
+$ WRITE SYS$OUTPUT ""
+$ Read /prompt="Enter file required, or type E to exit:" -
+        sys$command phial
+$!
+$ define sys$input sys$command
+$ Phial_L = f$lenght(phial)
+$ If Phial_l .eq. 1 .and. phial .eqs. "E" .or. phial .eqs. "e"
+$!
+$ Then
+$	GOTO CLEANUP
+$!       edit/tpu/read PRPDISK3:[users.'six.data]/out=sys$login:phial.txt
+$!       EDIT/TPU/READ sys$login:phial.txt
+$ Else                                           
+$       EDIT/TPU/READ 'phial
+$!
+$ Read /prompt="Enter file required, or type S to search for file name: " -
+        sys$command phial
+$ Endif
+$!
+$CLEANUP:
+$ set def sys$login
+$ EXIT 1
+
+==========================================================================
+$!
+$ set noon
+$ SHOW DEVICE PRPDISK4
+$START:
+$  set nover
+$  disk4files := prpdisk4:'p1
+$  disk1files := prpdisk1:'p1
+$  ws_count = 0
+$LOOP:
+$  file = f$search("''disk4files'*.*;*",2)
+$  if file .eqs. ""
+$  then
+$      goto finished
+$  endif
+$  directory = f$parse(file,,,"DIRECTORY")
+$  name = f$parse(file,,,"NAME")
+$  type = f$parse(file,,,"TYPE")
+$  version = f$parse(file,,,"VERSION")
+$  if "''type'" .eqs. ".DIR"
+$  then
+$     goto loop
+$  endif
+$  if  f$search("PRPDISK1:''directory'''name'''type'''version'",1) .eqs. ""
+$  then
+$	delete/log/noconfirm 'file
+$  endif
+$  goto LOOP
+$finished:
+$ SHOW DEVICE PRPDISK4
+$   exit  1
+
+================================================================================
+$!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+$!
+$INITIALISATION:
+$!
+$ set nover
+$ SET ON
+$ SET CONTROL=Y
+$ ON ERROR THEN GOTO CLEANUP
+$ ON CONTROL_Y THEN GOTO CLEANUP
+$!
+$START:
+$ READ /PROMPT="Enter user ID (6 chars).. (E to exit) " SYS$COMMAND six
+$ IF six .EQS. "E" THEN GOTO THE_END
+$ OPEN /READ /ERROR=CLEANUP 
+$ WRITE SYS$OUTPUT ""
+$ WRITE SYS$OUTPUT "Please wait..."
+$ set def PRPDISK3:[users.'six.printed] 
+$ dir/date/siz prpdisk3:[users.'six.printed]
+$ WRITE SYS$OUTPUT ""
+$ WRITE SYS$OUTPUT ""
+$ WRITE SYS$OUTPUT ""
+$ WRITE SYS$OUTPUT ""
+$ Read /prompt="Enter file required, or type E to exit: " -
+        sys$command phial
+$ define sys$input sys$command
+$ Phial_L = f$lenght(phial)
+$!
+$ If Phial_l .eq. 1 .and. phial .eqs. "E" .or. phial .eqs. "e"
+$!
+$ Then
+$	GOTO THE_END
+$!       edit/tpu/read PRPDISK3:[users.'six.printed]/out=sys$login:phial.txt
+$!       EDIT/TPU/READ sys$login:phial.txt
+$ Else                                           
+$       EDIT/TPU/READ 'phial
+$!
+$ Read /prompt="Enter file required, or type E to exit: " -
+        sys$command phial
+$!
+$ Endif
+$!
+$ set def sys$login
+$!prpdisk3:[users.prcopr.mtr2]
+$!
+$CLEANUP:
+$ set def sys$login
+$!prpdisk3:[users.prcopr.mtr2]
+$ EXIT 1
+[End of file]
+
+====================================================================
+$!++
+$!     START_QUEUES.COM (see comments at bottom)
+$!--
+$INITIALISATION:
+$       set on
+$       set verify
+$       set nocontrol       = y
+$       on error then goto RUNERROR	
+$       vcs_msg_no         := "01"
+$       vcs_msg            := "PROGRAM_ABNORMALLY_ENDED,_CALL_ESPS_SUPPORT"
+$	vcs_start	   := "00-PROCESS_STARTED"
+$	vcs_ok		   := "00-PROCESS_SUCCESSFULLY_ENDED"
+$	job_name	   := "START_QUEUES"
+$!
+$       delete             := delete
+$       purge              := purge
+$       define             := define
+$       write              := write
+$       run                := run
+$       account_name        = f$getjpi("","account")
+$!
+$START:
+$!
+$	request "%''account_name'_''job_name'_''vcs_start'"
+$!
+$!
+$!	q_stopped = f$getqui("display_queue","queue_stopped","ruev02$depbatch")
+$!       if q_stopped then start/queue ruev02$depbatch
+$	q_stopped = f$getqui("display_queue","queue_stopped","ruev03$depbatch")
+$       if q_stopped then start/queue ruev03$depbatch
+$	q_stopped = f$getqui("display_queue","queue_stopped","ruev05$depbatch")
+$       if q_stopped then start/queue ruev05$depbatch
+$!       q_stopped = f$getqui("display_queue","queue_stopped","ruev06$depbatch")
+$!       if q_stopped then start/queue ruev06$depbatch
+$!       q_stopped = f$getqui("display_queue","queue_stopped","ruev06$drpbatch")
+$!       if q_stopped then start/queue ruev06$drpbatch
+$       error_status       := '$status
+$!
+$ 	set noon
+$ BACKUP/IGNORE=INTERLOCK/RECORD DATA:TA.DAT -
+	PRPDISK4:[DRP.GMTMPDATA]*.*.*/LOG/REPLACE
+$clean_up:
+$	exit 1
+$!
+$EXIT:
+$       exit error_status
+$!
+$RUNERROR:
+$!
+$       error_status       := '$status
+$       set noon
+$       request "%''account_name'_''job_name'_''prog_name'_''vcs_msg_no'_''vcs_msg'"
+$       goto EXIT
+$!
+$!++
+$!***********************************************************************
+$! Command File and Utility Name: START_QUEUES.COM    
+$!
+$! Purpose:            Command procedure set ESPS logical for controlling
+$!		       the background processes.
+$!
+$! Method:             DEC scheduler, background
+$!
+$! Requirements:       -none-
+$!
+$! External Command Procedure:  -none-
+$!
+$! External programs:  -none-
+$!
+$! Inputs
+$!
+$!   Files:            -none-
+$!
+$!   Parameters
+$!
+$!     Required:       -none-
+$!
+$!     Optional:       -none-
+$!
+$!   Symbols:          -none-
+$!
+$!   Logicals:         -none-
+$!
+$!   Others:           -none-
+$!
+$! Output
+$!
+$!   Files:            -none-
+$!
+$!   Symbols:          -none-
+$!
+$!   Logicals:         ESPS_BACKGROUND_MODE
+$!
+$!   Others:           -none-
+$!
+$! Revision History:
+$!
+$!
+$! Date         Who  Modification
+$! 27-oct-1994  FH   Initial Release
+$! 19-JUN-1995  FH   Included the clear dependency logic from the auto day jobs
+$!***********************************************************************
+$!-------------------------------------------------------------------------!
+$!                                                                         !
+$!     PROC_GATHER_LOGS.COM                                                !
+$!                                                                         !
+$!  1)   This job's purpose is to gather all possible error logs           !
+$!       from PRCERRLOG into a central error log.                          !
+$!       It appends all the *.ERR files found in PRCERRLOG to              !
+$!       DRP$TSC_SPOOL:PROC_ERROR_MSG_XX.LOG (Where XX = day of the month).!
+$!                                                                         !
+$!  2)   It also renames the audit trail log file and creates a new        !
+$!       version every week (on monday morning).                           !
+$!       - PRC_AUDIT_TRAIL.LOG ---> renamed to PRC_AUDIT_TRAIL.OLD (keep 4)!
+$!       - PRC_AUDIT_TRAIL.LOG ---> created                                !
+$!-------------------------------------------------------------------------!
+$!
+$!---------------
+$ INITIALISATION:
+$!---------------
+$  Set NoOn
+$  SET NOVERIFY
+$  Set NoControl = y
+$  On Error Then Goto RUNERROR	
+$!
+$  Delete         := DELETE
+$  append_status  := 0
+$!
+$!----------
+$ CHECK_DAY:
+$!----------
+$!
+$!
+$  TIME_STAMP = F$TIME()
+$  WEEKDAY    = F$CVTIME(TIME_STAMP,,"WEEKDAY")
+$  DAY        = F$CVTIME(TIME_STAMP,,"DAY")
+$  MONTH      = F$EXTRACT(3,3,TIME_STAMP)
+$
+$  Str = "JAN*FEB*MAR*APR*MAY*JUN*JUL*AUG*SEP*OCT*NOV*DEC"
+$  Pos = F$LOCATE(MONTH,Str)
+$
+$  If DAY .GT. 28 Then DAY = 1
+$
+$  If Pos .Eq. 0
+$     Then
+$         Pos = 44
+$     Else
+$         Pos = Pos - 4 
+$  Endif
+$
+$  Month_del = F$EXTRACT(Pos,3,Str)
+$  Del_Date  = DAY + "-" + Month_del + F$EXTRACT(6,5,TIME_STAMP)
+$
+$
+$  If (Weekday .eqs. "Monday")
+$     Then
+$         Rename DRP$TSC_SPOOL:PRC_AUDIT_TRAIL.LOG DRP$TSC_SPOOL:*.OLD
+$         Purge/keep=4 DRP$TSC_SPOOL:PRC_AUDIT_TRAIL.OLD
+$         Crea/FDL=PRCFDL:AUDIT_TRAIL DRP$TSC_SPOOL:PRC_AUDIT_TRAIL.LOG
+$  Endif
+$!
+$!
+$!------------------------
+$ CHECK_IF_ERR_LOG_EXISTS:
+$!------------------------
+$!
+$  ERR_FILE  =  F$SEARCH( "PRCERRLOG:*.ERR")
+$!
+$  If ERR_FILE .eqs. "" Then Goto CLEAN_UP
+$!
+$  GATHER_FILE = "DRP$TSC_SPOOL:PROC_ERROR_MSG_" + DAY + "_" + MONTH + ".LOG;"
+$
+$  Append/New_Version  PRCERRLOG:*.ERR;*  'GATHER_FILE'
+$!
+$  append_status = '$status
+$!
+$!---------
+$ CLEAN_UP:
+$!---------
+$!
+$! put here the cleanup that needs to be done when the job runs successfully
+$!
+$  If append_status Then Delete PRCERRLOG:*.ERR;*
+$!
+$  Delete/before='DEL_DATE'  DRP$TSC_SPOOL:PROC_ERROR_MSG_*.LOG;*
+$!
+$!-----
+$ EXIT:
+$!-----
+$!
+$  Exit
+$!
+$!
+$!---------
+$ RUNERROR:
+$!---------
+$!
+$ Error_Status := '$status
+$ Set NoOn
+$ Goto EXIT
+$!
+$!
+$!***********************************************************************
+$! Command File and Utility Name: PROC_GATHER_LOGS.COM
+$!
+$! Purpose:           See top of file.
+$!
+$! Method:             VAX scheduler (Called from PRCEND.COM)
+$!
+$! Requirements:       -none-
+$!
+$! External Command Procedure:  -none-
+$!
+$! External programs:  
+$!
+$! Inputs
+$!
+$!   Files:            -none-
+$!
+$!   Parameters
+$!
+$!     Required:       -none-
+$!
+$!     Optional:       -none-
+$!
+$!   Symbols:          -none-
+$!
+$!   Logicals:         -none-
+$!
+$!   Others:           -none-
+$!
+$! Output
+$!
+$!   Files:            -none-
+$!
+$!   Symbols:          -none-
+$!
+$!   Logicals:         -none-
+$!
+$!   Others:           -none-
+$!
+$! Revision History:
+$!
+$!
+$! Date         Who  Modification
+$!***********************************************************************
+$! 04/05/93     MA   Initial version
+$!--
